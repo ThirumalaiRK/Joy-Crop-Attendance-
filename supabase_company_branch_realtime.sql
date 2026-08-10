@@ -6,9 +6,9 @@
 -- Dashboard -> SQL Editor -> New Query -> Paste & Run
 -- ============================================================================
 
--- ── 1. COMPANIES TABLE ────────────────────────────────────────────────────────
+-- ── 1. COMPANIES TABLE & EXTENDED COLUMNS ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.companies (
-  id VARCHAR(100) PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(255) NOT NULL,
   code VARCHAR(100),
   logo TEXT DEFAULT '🏢',
@@ -28,6 +28,22 @@ CREATE TABLE IF NOT EXISTS public.companies (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Ensure all required columns exist if the table was previously created
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS code VARCHAR(100);
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS logo TEXT DEFAULT '🏢';
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS plan VARCHAR(50) DEFAULT 'Enterprise';
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'Active';
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255);
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(50);
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS state VARCHAR(100);
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'India';
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS timezone VARCHAR(100) DEFAULT 'IST (UTC+5:30)';
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS storage_used VARCHAR(50) DEFAULT '4.2 GB';
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS api_usage VARCHAR(50) DEFAULT '28 / 10,000';
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS renewal_date VARCHAR(50) DEFAULT '2027-01-01';
+
 -- Enable RLS & Allow Access
 ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all access to companies" ON public.companies;
@@ -44,9 +60,10 @@ DO $$ BEGIN
 END $$;
 
 -- ── 2. BRANCHES TABLE ─────────────────────────────────────────────────────────
+-- Uses UUID company_id matching companies.id type
 CREATE TABLE IF NOT EXISTS public.branches (
-  id VARCHAR(100) PRIMARY KEY,
-  company_id VARCHAR(100) REFERENCES public.companies(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY,
+  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
   name VARCHAR(255) NOT NULL,
   location TEXT NOT NULL,
   timezone VARCHAR(100) DEFAULT 'IST (UTC+5:30)',
@@ -78,7 +95,7 @@ CREATE INDEX IF NOT EXISTS idx_branches_status ON public.branches(status);
 -- ── 3. SEED SINGLE TENANT COMPANY (Joy Corporate Solutions Pvt. Ltd.) ──────────
 INSERT INTO public.companies (id, name, code, logo, plan, status, contact_email, storage_used, api_usage, renewal_date)
 VALUES (
-  'COMP-001',
+  '00000000-0000-0000-0000-000000000000',
   'Joy Corporate Solutions Pvt. Ltd.',
   'COMP-001',
   '🏢',
@@ -91,10 +108,11 @@ VALUES (
 )
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
+  code = EXCLUDED.code,
   plan = EXCLUDED.plan,
   status = EXCLUDED.status,
   contact_email = EXCLUDED.contact_email;
 
 -- ============================================================================
--- SUCCESS: Single Company Created & Branches Table Ready for Realtime Additions!
+-- SUCCESS: Fixed UUID type matching for companies.id and branches.company_id!
 -- ============================================================================
