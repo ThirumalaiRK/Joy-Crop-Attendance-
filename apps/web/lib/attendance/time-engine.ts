@@ -56,7 +56,10 @@ export const DEFAULT_SHIFT_RULE: ShiftRule = {
 };
 
 // ─── INITIAL RESILIENT MOCK DATASTORE ────────────────────────────────────────
-const TODAY_STR = new Date().toISOString().split('T')[0];
+// CRITICAL: Always compute today's date in IST (Asia/Kolkata = UTC+5:30).
+// On Vercel (UTC server), `new Date().toISOString().split('T')[0]` returns the UTC date.
+// After 6:30 PM IST, Vercel would compute the *next* UTC day, breaking today's attendance!
+const TODAY_STR = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // "YYYY-MM-DD" in IST
 
 const INITIAL_EVENTS: AttendanceEvent[] = [];
 
@@ -159,15 +162,19 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
         const recDept = resolved?.dept || rec.department || 'Staff';
         const createdAt = rec.created_at || new Date().toISOString();
 
-        // Use the record's own `date` field, or fall back to created_at date portion
-        // This ensures events land on the correct calendar day for today-checks.
-        const recDateStr: string = rec.date
-          ? rec.date  // e.g. "2026-08-04"
-          : createdAt.split('T')[0];
+        // Use the record's own `date` field, or derive IST date from created_at
+        // CRITICAL: Do NOT use createdAt.split('T')[0] — that's UTC date, not IST date.
+        // On Vercel (UTC server), records created after 6:30 PM IST would get the NEXT UTC day.
+        const recDateStr: string = rec.date && /^\d{4}-\d{2}-\d{2}$/.test(rec.date)
+          ? rec.date  // e.g. "2026-08-10"
+          : new Date(createdAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // → "YYYY-MM-DD" in IST
+
 
         /**
-         * Convert a display time like "09:15 AM" or "05:34:40 PM" into a proper ISO timestamp
-         * on the record's date, using local timezone offset.
+         * Convert a display time like "09:15 AM" or "05:34:40 PM" stored in IST
+         * into a proper UTC ISO timestamp. Since these strings are always saved in
+         * Asia/Kolkata (IST = UTC+5:30), we subtract 330 minutes to get UTC.
+         * This is safe on any server timezone (Vercel = UTC, local = IST).
          */
         function buildISOFromDisplayTime(displayTime: string, fallbackIso: string): string {
           if (!displayTime || displayTime === '—' || displayTime === '-') return fallbackIso;
@@ -181,10 +188,15 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
               const ampm = match[4].toUpperCase();
               if (ampm === 'PM' && hours < 12) hours += 12;
               if (ampm === 'AM' && hours === 12) hours = 0;
-              // Build a local date at recDateStr + the parsed time
-              const d = new Date(`${recDateStr}T00:00:00`);
-              d.setHours(hours, minutes, seconds, 0);
-              return d.toISOString();
+              // Treat the parsed time as IST (UTC+5:30).
+              // Build total minutes since midnight in IST, then subtract 330 to get UTC.
+              const istTotalMinutes = hours * 60 + minutes;
+              const utcTotalMinutes = istTotalMinutes - 330; // IST → UTC offset
+              // Handle day boundary (e.g., early morning IST times may roll into previous UTC day)
+              const utcDate = new Date(`${recDateStr}T00:00:00Z`);
+              utcDate.setUTCMinutes(utcDate.getUTCMinutes() + utcTotalMinutes);
+              utcDate.setUTCSeconds(seconds, 0);
+              return utcDate.toISOString();
             }
           } catch {}
           return fallbackIso;
@@ -607,7 +619,10 @@ export function fetchAllAttendanceSummaries(targetDate?: string): AttendanceSumm
   const filterDate = targetDate || TODAY_STR;
   const filteredEvents = eventsStore.filter((evt) => {
     if (!filterDate || filterDate === 'ALL') return true;
-    const evtDate = evt.eventTime ? evt.eventTime.split('T')[0] : '';
+    // Extract IST date from event timestamp (UTC ISO string → IST date in YYYY-MM-DD)
+    const evtDate = evt.eventTime
+      ? new Date(evt.eventTime).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+      : '';
     return evtDate === filterDate || (evt as any).date === filterDate;
   });
 
