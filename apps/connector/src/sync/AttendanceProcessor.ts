@@ -330,6 +330,12 @@ export class AttendanceProcessor {
     const [shOutH, shOutM] = shift.check_out_time.split(':').map(Number);
     const shiftOutMins = shOutH * 60 + shOutM;
 
+    const [shOutStartH, shOutStartM] = (shift.check_out_start || '16:00').split(':').map(Number);
+    const shiftOutStartMins = shOutStartH * 60 + shOutStartM;
+
+    // Effective Check-Out window start (e.g. 16:00 / 4:00 PM or 30 mins before shift end, whichever is earlier)
+    const effectiveCheckOutStart = Math.min(shiftOutStartMins, shiftOutMins - 30);
+
     // ── RULE 0: 10-Second Rapid Cooldown Guard (in-memory) ────────────────────
     const lastMs = punchCooldownMap.get(empCode) || 0;
     if (lastMs > 0 && currentPunchMs - lastMs < 10_000) {
@@ -345,19 +351,8 @@ export class AttendanceProcessor {
     // Update cooldown map with this punch time
     punchCooldownMap.set(empCode, currentPunchMs);
 
-    // ── STATE: SESSION_LOCKED (Already checked out for today) ─────────────────
-    if (session.check_out_time) {
-      return {
-        eventType: 'ALREADY_CHECKED_OUT',
-        lateMins: 0,
-        earlyMins: 0,
-        userMessage: 'Attendance Completed',
-        userSubtext: 'Already checked out today.',
-      };
-    }
-
     // ── STATE: NO_SESSION (First scan of the day → CHECK_IN) ─────────────────
-    if (!session.check_in_time) {
+    if (!session || !session.check_in_time) {
       let lateMins = 0;
       if (punchMins > shiftInMins + shift.late_allowed_mins) {
         lateMins = punchMins - shiftInMins;
@@ -371,9 +366,30 @@ export class AttendanceProcessor {
       };
     }
 
-    // ── STATE: CHECKED_IN ─────────────────────────────────────────────────────
-    // Check-Out window: punch within 30 min before shift end OR past shift end
-    if (punchMins >= shiftOutMins - 30) {
+    // ── STATE: CHECKED_IN (Already checked in, evaluating exit scan) ─────────
+    // Check-Out condition:
+    // 1. Punch is at or after effectiveCheckOutStart (e.g. >= 16:00 / 4:00 PM) OR
+    // 2. Punch is in afternoon (>= 13:00 / 1:00 PM) AND at least 3 hours after check_in_time
+    const checkInMs = session.check_in_time ? new Date(session.check_in_time).getTime() : 0;
+    const isAfternoonExit = punchMins >= 13 * 60 && checkInMs > 0 && (currentPunchMs - checkInMs >= 3 * 3600 * 1000);
+    const inCheckOutWindow = punchMins >= effectiveCheckOutStart || isAfternoonExit;
+
+    if (inCheckOutWindow) {
+      // If already checked out previously, check if this is a later check-out (last check-out rule)
+      if (session.check_out_time) {
+        const prevOutMs = new Date(session.check_out_time).getTime();
+        if (currentPunchMs <= prevOutMs + 60_000) {
+          // Less than 1 minute after previous check out
+          return {
+            eventType: 'ALREADY_CHECKED_OUT',
+            lateMins: 0,
+            earlyMins: 0,
+            userMessage: 'Attendance Completed',
+            userSubtext: 'Already checked out today.',
+          };
+        }
+      }
+
       let earlyMins = 0;
       if (punchMins < shiftOutMins - shift.early_out_allowed_mins) {
         earlyMins = shiftOutMins - punchMins;
@@ -387,7 +403,7 @@ export class AttendanceProcessor {
       };
     }
 
-    // Duplicate Check-In Guard — scan during working hours, not in exit window
+    // Duplicate Check-In Guard — scan during early working hours, not in exit window
     return {
       eventType: 'DUPLICATE_CHECK_IN',
       lateMins: 0,
