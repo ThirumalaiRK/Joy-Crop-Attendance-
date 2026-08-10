@@ -1,4 +1,4 @@
-@echo off
+        @echo off
 TITLE Enable Auto-Start on Windows Boot
 COLOR 0B
 

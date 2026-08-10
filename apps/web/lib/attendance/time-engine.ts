@@ -617,10 +617,18 @@ export function fetchAllAttendanceSummaries(targetDate?: string): AttendanceSumm
     const rawName = (evt.employeeName || '').trim();
     const rawId = (evt.employeeId || '').trim();
 
+    if (rawId === '0' || rawId === 'EMP-0' || rawName.toLowerCase().includes('employee 0')) {
+      return;
+    }
+
     const resolved = employeeLookupCache.get(rawId) || employeeLookupCache.get(rawName.toLowerCase()) || employeeLookupCache.get(rawName);
     let canonicalId = resolved?.id || rawId;
     let canonicalName = resolved?.name || (rawName && !rawName.startsWith('User ') ? rawName : `Employee ${rawId}`);
     let canonicalDept = resolved?.dept || (evt as any).department || 'Engineering';
+
+    if (canonicalId === '0' || canonicalId === 'EMP-0' || canonicalName.toLowerCase().includes('employee 0')) {
+      return;
+    }
 
     if (!employeeMap.has(canonicalId)) {
       employeeMap.set(canonicalId, {

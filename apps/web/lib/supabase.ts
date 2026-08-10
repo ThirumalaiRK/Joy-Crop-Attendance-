@@ -68,22 +68,28 @@ export async function fetchAttendanceFromSupabase(): Promise<AttendanceRecord[]>
     }
 
     if (data && data.length > 0) {
-      return data.map((row) => ({
-        id: row.id || `LOG-${Date.now()}`,
-        employeeId: row.employee_id || 'EMP-0001',
-        employeeName: row.employee_name || 'THIRUMALAI R K',
-        employeeAvatar: row.employee_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-        department: row.department || 'IT',
-        checkInTime: row.check_in_time || '09:00 AM',
-        checkOutTime: row.check_out_time,
-        date: row.date || 'Today',
-        method: row.method || 'fingerprint',
-        status: row.status || 'present',
-        deviceName: row.device_name || 'Mantra MFS110 L1 (S/N: 7055634)',
-        confidenceScore: row.confidence_score || 99.4,
-        location: row.location || 'HQ Floor 5 Exec Lounge',
-        verified: row.verified ?? true,
-      }));
+      return data
+        .filter((row) => {
+          const name = (row.employee_name || '').toLowerCase();
+          const code = (row.employee_id || '').toUpperCase();
+          return !name.includes('employee 0') && code !== 'EMP-0' && code !== '0';
+        })
+        .map((row) => ({
+          id: row.id || `LOG-${Date.now()}`,
+          employeeId: row.employee_id || 'EMP-0001',
+          employeeName: row.employee_name || 'THIRUMALAI R K',
+          employeeAvatar: row.employee_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+          department: row.department || 'IT',
+          checkInTime: row.check_in_time || '09:00 AM',
+          checkOutTime: row.check_out_time,
+          date: row.date || 'Today',
+          method: row.method || 'fingerprint',
+          status: row.status || 'present',
+          deviceName: row.device_name || 'Mantra MFS110 L1 (S/N: 7055634)',
+          confidenceScore: row.confidence_score || 99.4,
+          location: row.location || 'HQ Floor 5 Exec Lounge',
+          verified: row.verified ?? true,
+        }));
     }
   } catch (err) {
     console.error('Supabase fetch exception:', err);
@@ -160,7 +166,11 @@ const UNWANTED_EMPLOYEE_NAMES = [
 
 export async function purgeUnwantedMockEmployeesFromSupabase() {
   try {
-    await supabase.from('employees').delete().in('employee_code', ['EMP-715923']);
+    await Promise.all([
+      supabase.from('employees').delete().or('employee_code.eq.EMP-715923,employee_code.eq.EMP-0,employee_code.eq.0,name.eq.Employee 0,name.ilike.%Employee 0%'),
+      supabase.from('attendance_records').delete().or('employee_id.eq.EMP-0,employee_id.eq.0,employee_name.eq.Employee 0,employee_name.ilike.%Employee 0%'),
+      supabase.from('attendance_sessions').delete().or('employee_id.eq.EMP-0,employee_id.eq.0,employee_name.eq.Employee 0,employee_name.ilike.%Employee 0%'),
+    ]);
 
     // Auto-consolidate duplicate records like EMP-10 and EMP-000010
     const { data: emps } = await supabase

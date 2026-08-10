@@ -34,8 +34,11 @@ export class EventQueue extends EventEmitter {
    * Enqueue raw punch event from TCP packet (<5ms receive overhead)
    */
   public push(raw: RawPunchLog): boolean {
-    const rawUserIdStr = String(raw.device_user_id).trim();
-    if (!rawUserIdStr || rawUserIdStr === '0') return false;
+    const rawUserIdStr = String(raw.device_user_id || '').trim();
+    const numericUid = parseInt(rawUserIdStr.replace(/\D/g, ''), 10);
+    if (!rawUserIdStr || rawUserIdStr === '0' || rawUserIdStr === 'EMP-0' || isNaN(numericUid) || numericUid <= 0) {
+      return false;
+    }
 
     // 1. Deduplication check (5-second window in RAM)
     const dedupeKey = `${rawUserIdStr}:${raw.device_ip}`;
@@ -57,7 +60,10 @@ export class EventQueue extends EventEmitter {
 
     // O(1) RAM employee resolution for zero-latency Socket.IO broadcast
     const cachedEmp = employeeCache.get(rawUserIdStr);
-    const resolvedName = cachedEmp ? cachedEmp.name : `Employee ${rawUserIdStr}`;
+    if (cachedEmp && cachedEmp.name && cachedEmp.name.toLowerCase().includes('employee 0')) {
+      return false;
+    }
+    const resolvedName = cachedEmp ? cachedEmp.name : `EMP-${numericUid}`;
 
     // 2. IMMEDIATE (<20ms) Realtime Broadcast over Socket.IO before DB write!
     this.emit('attendance:new', {

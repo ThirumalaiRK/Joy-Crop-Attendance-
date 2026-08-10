@@ -144,62 +144,85 @@ export class AttendanceProcessor {
    * Resolves employee record using RAM Employee Cache (O(1) <1ms) with DB fallback
    */
   private static async resolveEmployee(rawUserIdStr: string): Promise<any> {
+    const cleanId = rawUserIdStr.trim();
+    if (!cleanId || cleanId === '0' || cleanId === 'EMP-0' || cleanId === 'EMP-000000') {
+      return null;
+    }
+
     // 1. Instantaneous RAM Cache Lookup (<1ms)
-    const cached = employeeCache.get(rawUserIdStr);
-    if (cached) {
+    const cached = employeeCache.get(cleanId);
+    if (cached && cached.name && !cached.name.toLowerCase().includes('employee 0')) {
       return cached;
     }
 
-    const numericUid = parseInt(rawUserIdStr.replace(/\D/g, ''), 10) || parseInt(rawUserIdStr, 10);
-    const unpaddedCode = `EMP-${numericUid}`;
-    const paddedCode = `EMP-${String(numericUid || 1).padStart(6, '0')}`;
+    const numericUid = parseInt(cleanId.replace(/\D/g, ''), 10);
+    if (isNaN(numericUid) || numericUid <= 0) {
+      return null;
+    }
 
-    // 2. Fallback search in employees table if not yet cached
+    const unpaddedCode = `EMP-${numericUid}`;
+    const paddedCode = `EMP-${String(numericUid).padStart(6, '0')}`;
+
+    // 2. Fallback search in employees table
     const { data: emps } = await supabase
       .from('employees')
       .select('*')
-      .or(`employee_code.eq.${unpaddedCode},employee_code.eq.${paddedCode},employee_code.eq.${rawUserIdStr},device_user_id.eq.${rawUserIdStr},device_user_id.eq.${unpaddedCode},device_user_id.eq.${paddedCode}`);
+      .or(`employee_code.eq.${unpaddedCode},employee_code.eq.${paddedCode},employee_code.eq.${cleanId},device_user_id.eq.${cleanId},device_user_id.eq.${unpaddedCode},device_user_id.eq.${paddedCode}`)
+      .not('name', 'ilike', '%Employee 0%');
 
     if (emps && emps.length > 0) {
       employeeCache.set(emps[0]);
       return emps[0];
     }
 
-    // 3. Search in device_users table for mapping
+    // 3. Search in device_users table for hardware mapping
     const { data: devUser } = await supabase
       .from('device_users')
       .select('*')
-      .or(`device_user_id.eq.${rawUserIdStr},uid.eq.${numericUid}`)
+      .or(`device_user_id.eq.${cleanId},uid.eq.${numericUid}`)
       .maybeSingle();
 
-    let empName = devUser?.name || (
-      numericUid === 1 ? 'Dharun B' :
-      (numericUid === 2 || numericUid === 10) ? 'THIRUMALAI RK' :
-      numericUid === 12 ? 'sakthi rk' :
-      numericUid === 5 ? 'Ramesh Kumar' :
-      `Employee ${rawUserIdStr}`
-    );
-    let empDept = numericUid === 1 ? 'Marketing' : 'Engineering';
-    let empCode = unpaddedCode;
+    if (devUser && devUser.name && !devUser.name.toLowerCase().includes('employee 0')) {
+      const newEmp = {
+        id: require('crypto').randomUUID(),
+        employee_code: unpaddedCode,
+        device_user_id: cleanId,
+        name: devUser.name,
+        department: 'Engineering',
+        status: 'Active',
+        updated_at: new Date().toISOString(),
+      };
+      try {
+        await supabase.from('employees').insert([newEmp]);
+        employeeCache.set(newEmp);
+      } catch (_) {}
+      return newEmp;
+    }
 
-    // 4. Auto-provision in employees table so no punch is dropped
-    const empUuid = require('crypto').randomUUID();
-    const newEmp = {
-      id: empUuid,
-      employee_code: empCode,
-      device_user_id: rawUserIdStr,
-      name: empName,
-      department: empDept,
-      status: 'Active',
-      updated_at: new Date().toISOString(),
-    };
+    // Known static enrollments fallback
+    if (numericUid === 1 || numericUid === 2 || numericUid === 10 || numericUid === 12 || numericUid === 5) {
+      const empName = numericUid === 1 ? 'Dharun B' :
+                      (numericUid === 2 || numericUid === 10) ? 'THIRUMALAI RK' :
+                      numericUid === 12 ? 'sakthi rk' : 'Ramesh Kumar';
+      const empDept = numericUid === 1 ? 'Marketing' : 'Engineering';
+      const emp = {
+        id: require('crypto').randomUUID(),
+        employee_code: unpaddedCode,
+        device_user_id: cleanId,
+        name: empName,
+        department: empDept,
+        status: 'Active',
+        updated_at: new Date().toISOString(),
+      };
+      try {
+        await supabase.from('employees').insert([emp]);
+        employeeCache.set(emp);
+      } catch (_) {}
+      return emp;
+    }
 
-    try {
-      await supabase.from('employees').insert([newEmp]);
-      employeeCache.set(newEmp);
-    } catch (_) {}
-
-    return newEmp;
+    // Unenrolled / Unknown Fingerprint: Do NOT create dummy employee
+    return null;
   }
 
   /**
