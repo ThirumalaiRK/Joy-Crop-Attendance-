@@ -189,14 +189,24 @@ export class AttendanceProcessor {
       return null;
     }
 
-    const unpaddedCode = `EMP-${numericUid}`;
-    const paddedCode = `EMP-${String(numericUid).padStart(6, '0')}`;
+    const unpaddedCode = `EMP-${String(numericUid).padStart(2, '0')}`;
+    const codeVariants = [
+      `EMP-${numericUid}`,
+      `EMP-${String(numericUid).padStart(2, '0')}`,
+      `EMP-${String(numericUid).padStart(3, '0')}`,
+      `EMP-${String(numericUid).padStart(6, '0')}`,
+      String(numericUid),
+      String(numericUid).padStart(2, '0'),
+      String(numericUid).padStart(3, '0'),
+      cleanId,
+    ];
 
     // 2. Fallback search in employees table
+    const orClauses = codeVariants.map(v => `employee_code.eq.${v},device_user_id.eq.${v}`).join(',');
     const { data: emps } = await supabase
       .from('employees')
       .select('*')
-      .or(`employee_code.eq.${unpaddedCode},employee_code.eq.${paddedCode},employee_code.eq.${cleanId},device_user_id.eq.${cleanId},device_user_id.eq.${unpaddedCode},device_user_id.eq.${paddedCode}`)
+      .or(orClauses)
       .not('name', 'ilike', '%Employee 0%');
 
     if (emps && emps.length > 0) {
