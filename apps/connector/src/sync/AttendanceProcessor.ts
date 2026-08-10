@@ -528,7 +528,11 @@ export class AttendanceProcessor {
    */
   private static async loadActiveTimetable(): Promise<ShiftTimetable> {
     try {
-      const { data, error } = await supabase.from('timetables').select('*').limit(1);
+      const { data, error } = await supabase
+        .from('timetables')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(1);
       if (data && data.length > 0) {
         const tt = data[0];
         return {

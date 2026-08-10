@@ -20,6 +20,19 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.json();
+
+    if (!payload.id && payload.name) {
+      const { data: existing } = await supabaseAdmin
+        .from('timetables')
+        .select('id')
+        .eq('name', payload.name)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        payload.id = existing[0].id;
+      }
+    }
+
     const { data, error } = await supabaseAdmin
       .from('timetables')
       .upsert([payload], { onConflict: 'id' })

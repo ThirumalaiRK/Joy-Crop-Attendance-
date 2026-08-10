@@ -177,6 +177,20 @@ export function ShiftManager() {
 
   useEffect(() => {
     loadTimetables();
+
+    const channel = supabase
+      .channel('shift-manager-realtime-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'timetables' }, () => {
+        loadTimetables();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'timetable_breaks' }, () => {
+        loadTimetables();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Save Timetable via Service Role API Route (Bypasses RLS 401)
