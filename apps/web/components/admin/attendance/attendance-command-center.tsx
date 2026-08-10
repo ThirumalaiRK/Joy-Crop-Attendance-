@@ -104,9 +104,10 @@ export function AttendanceCommandCenter() {
 
   const handleResetEngine = async () => {
     if (!confirm('Rebuild all calculated attendance sessions from raw biometric events?')) return;
+    const connectorUrl = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:4000/attendance/reset-engine', { method: 'POST' });
+      const res = await fetch(`${connectorUrl}/attendance/reset-engine`, { method: 'POST' });
       const json = await res.json();
       await syncSupabaseEvents(true);
       loadTimeEngineSummaries();
@@ -122,9 +123,10 @@ export function AttendanceCommandCenter() {
 
   const handleSyncAndClearLogs = async () => {
     if (!confirm('Download logs from device -> Verify in Supabase -> Backup -> Clear device logs?')) return;
+    const connectorUrl = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:4000/attendance/sync-and-clear-device-logs', { method: 'POST' });
+      const res = await fetch(`${connectorUrl}/attendance/sync-and-clear-device-logs`, { method: 'POST' });
       const json = await res.json();
       await syncSupabaseEvents(true);
       loadTimeEngineSummaries();

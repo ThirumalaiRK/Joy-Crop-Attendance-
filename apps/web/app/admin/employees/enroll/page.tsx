@@ -34,8 +34,9 @@ export default function EnrollmentPage() {
 
   const handleEnroll = async () => {
     setEnrollmentStatus('Waiting');
+    const connectorUrl = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
     try {
-      const res = await fetch('http://localhost:4000/api/device/enroll', {
+      const res = await fetch(`${connectorUrl}/api/device/enroll`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -55,9 +56,10 @@ export default function EnrollmentPage() {
   };
 
   const pollStatus = async () => {
+    const connectorUrl = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
     const interval = setInterval(async () => {
       try {
-        const res = await fetch('http://localhost:4000/api/device/enroll/status');
+        const res = await fetch(`${connectorUrl}/api/device/enroll/status`);
         const data = await res.json();
         
         if (data.status) {

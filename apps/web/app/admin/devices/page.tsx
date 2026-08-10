@@ -22,7 +22,8 @@ import {
 import { fetchDevicesFromSupabase, supabase } from "@/lib/supabase";
 import { BiometricDevice } from "@/types";
 
-const CONNECTOR = "http://localhost:4000/api/device";
+const CONNECTOR_BASE = process.env.NEXT_PUBLIC_CONNECTOR_URL || "http://localhost:4000";
+const CONNECTOR = `${CONNECTOR_BASE}/api/device`;
 
 function LatencyBar({ ms }: { ms: number }) {
   const color = ms === 0 ? "bg-slate-600" : ms < 30 ? "bg-emerald-500" : ms < 100 ? "bg-amber-500" : "bg-rose-500";

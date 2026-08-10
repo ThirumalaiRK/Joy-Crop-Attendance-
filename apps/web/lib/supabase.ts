@@ -425,6 +425,38 @@ export function subscribeToLiveEmployees(
   };
 }
 
+/**
+ * Real-time subscription helper for Hardware Device status and telemetry changes
+ */
+export function subscribeToLiveDevices(
+  onChange: (payload: { eventType: 'INSERT' | 'UPDATE' | 'DELETE'; record: any }) => void
+) {
+  const channel = supabase
+    .channel('live-devices-channel')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'devices',
+      },
+      (payload) => {
+        const record = (payload.new && Object.keys(payload.new).length > 0 ? payload.new : payload.old) as any;
+        if (record) {
+          onChange({
+            eventType: payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE',
+            record,
+          });
+        }
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
 
 function toValidUuidOrNull(uuidStr?: string): string | null {
   if (!uuidStr) return null;
@@ -891,7 +923,8 @@ export async function deleteEmployeeFromSupabase(
 
     // 3. Direct Hardware Connector Gateway Fallback (Port 4000)
     try {
-      await fetch('http://localhost:4000/api/device/users/delete', {
+      const connectorUrl = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
+      await fetch(`${connectorUrl}/api/device/users/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -391,8 +391,9 @@ export function AdminEmployees() {
     const code = enrollEmp.employeeCode || enrollEmp.id;
     const numericUid = parseInt(code.replace(/\D/g, ''), 10) || 10;
 
+    const connectorUrl = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
     try {
-      const res = await fetch('http://localhost:4000/api/device/enroll', {
+      const res = await fetch(`${connectorUrl}/api/device/enroll`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

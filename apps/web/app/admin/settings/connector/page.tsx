@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
-const CONNECTOR_URL = "http://localhost:4000";
+const CONNECTOR_URL = process.env.NEXT_PUBLIC_CONNECTOR_URL || "http://localhost:4000";
 
 interface ConnectorStatus {
   running: boolean;

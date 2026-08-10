@@ -50,7 +50,8 @@ export function UnknownFingerprintsPanel() {
   useEffect(() => {
     load();
 
-    const socket = io('http://localhost:4000', { transports: ['websocket'] });
+    const connectorUrl = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
+    const socket = io(connectorUrl, { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
 
     socket.on('connect', () => setWsConnected(true));

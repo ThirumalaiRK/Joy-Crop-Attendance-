@@ -21,7 +21,8 @@ import {
 import { fetchDevicesFromSupabase, supabase } from '../../../lib/supabase';
 import { BiometricDevice } from '../../../types';
 
-const CONNECTOR = 'http://localhost:4000/api/device';
+const CONNECTOR_BASE = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
+const CONNECTOR = `${CONNECTOR_BASE}/api/device`;
 
 function DeviceCard({ d, onAction }: { d: BiometricDevice; onAction: (action: string, ip: string) => void }) {
   const isOnline = d.status === 'online';
