@@ -209,3 +209,151 @@ CREATE POLICY "notifications_select" ON public.notifications FOR SELECT USING (t
 CREATE POLICY "notifications_insert" ON public.notifications FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
 CREATE POLICY "notifications_update" ON public.notifications FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
 CREATE POLICY "notifications_delete" ON public.notifications FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 3. FIX: rls_enabled_no_policy (Add policies for tables with RLS enabled)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- ── Table: ai_insights ────────────────────────────────────────────────────────
+ALTER TABLE public.ai_insights ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "ai_insights_select" ON public.ai_insights;
+DROP POLICY IF EXISTS "ai_insights_insert" ON public.ai_insights;
+DROP POLICY IF EXISTS "ai_insights_update" ON public.ai_insights;
+DROP POLICY IF EXISTS "ai_insights_delete" ON public.ai_insights;
+
+CREATE POLICY "ai_insights_select" ON public.ai_insights FOR SELECT USING (true);
+CREATE POLICY "ai_insights_insert" ON public.ai_insights FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "ai_insights_update" ON public.ai_insights FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "ai_insights_delete" ON public.ai_insights FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ── Table: attendance_logs ────────────────────────────────────────────────────
+ALTER TABLE public.attendance_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "attendance_logs_select" ON public.attendance_logs;
+DROP POLICY IF EXISTS "attendance_logs_insert" ON public.attendance_logs;
+DROP POLICY IF EXISTS "attendance_logs_update" ON public.attendance_logs;
+DROP POLICY IF EXISTS "attendance_logs_delete" ON public.attendance_logs;
+
+CREATE POLICY "attendance_logs_select" ON public.attendance_logs FOR SELECT USING (true);
+CREATE POLICY "attendance_logs_insert" ON public.attendance_logs FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "attendance_logs_update" ON public.attendance_logs FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "attendance_logs_delete" ON public.attendance_logs FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ── Table: biometric_devices ──────────────────────────────────────────────────
+ALTER TABLE public.biometric_devices ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "biometric_devices_select" ON public.biometric_devices;
+DROP POLICY IF EXISTS "biometric_devices_insert" ON public.biometric_devices;
+DROP POLICY IF EXISTS "biometric_devices_update" ON public.biometric_devices;
+DROP POLICY IF EXISTS "biometric_devices_delete" ON public.biometric_devices;
+
+CREATE POLICY "biometric_devices_select" ON public.biometric_devices FOR SELECT USING (true);
+CREATE POLICY "biometric_devices_insert" ON public.biometric_devices FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "biometric_devices_update" ON public.biometric_devices FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "biometric_devices_delete" ON public.biometric_devices FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ── Table: fingerprint_metadata ───────────────────────────────────────────────
+ALTER TABLE public.fingerprint_metadata ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "fingerprint_metadata_select" ON public.fingerprint_metadata;
+DROP POLICY IF EXISTS "fingerprint_metadata_insert" ON public.fingerprint_metadata;
+DROP POLICY IF EXISTS "fingerprint_metadata_update" ON public.fingerprint_metadata;
+DROP POLICY IF EXISTS "fingerprint_metadata_delete" ON public.fingerprint_metadata;
+
+CREATE POLICY "fingerprint_metadata_select" ON public.fingerprint_metadata FOR SELECT USING (true);
+CREATE POLICY "fingerprint_metadata_insert" ON public.fingerprint_metadata FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "fingerprint_metadata_update" ON public.fingerprint_metadata FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "fingerprint_metadata_delete" ON public.fingerprint_metadata FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ── Table: floor_zone_employees ───────────────────────────────────────────────
+ALTER TABLE public.floor_zone_employees ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "floor_zone_employees_select" ON public.floor_zone_employees;
+DROP POLICY IF EXISTS "floor_zone_employees_insert" ON public.floor_zone_employees;
+DROP POLICY IF EXISTS "floor_zone_employees_update" ON public.floor_zone_employees;
+DROP POLICY IF EXISTS "floor_zone_employees_delete" ON public.floor_zone_employees;
+
+CREATE POLICY "floor_zone_employees_select" ON public.floor_zone_employees FOR SELECT USING (true);
+CREATE POLICY "floor_zone_employees_insert" ON public.floor_zone_employees FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "floor_zone_employees_update" ON public.floor_zone_employees FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "floor_zone_employees_delete" ON public.floor_zone_employees FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ── Table: floor_zones ────────────────────────────────────────────────────────
+ALTER TABLE public.floor_zones ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "floor_zones_select" ON public.floor_zones;
+DROP POLICY IF EXISTS "floor_zones_insert" ON public.floor_zones;
+DROP POLICY IF EXISTS "floor_zones_update" ON public.floor_zones;
+DROP POLICY IF EXISTS "floor_zones_delete" ON public.floor_zones;
+
+CREATE POLICY "floor_zones_select" ON public.floor_zones FOR SELECT USING (true);
+CREATE POLICY "floor_zones_insert" ON public.floor_zones FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "floor_zones_update" ON public.floor_zones FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "floor_zones_delete" ON public.floor_zones FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ── Table: security_logs ──────────────────────────────────────────────────────
+ALTER TABLE public.security_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "security_logs_select" ON public.security_logs;
+DROP POLICY IF EXISTS "security_logs_insert" ON public.security_logs;
+DROP POLICY IF EXISTS "security_logs_update" ON public.security_logs;
+DROP POLICY IF EXISTS "security_logs_delete" ON public.security_logs;
+
+CREATE POLICY "security_logs_select" ON public.security_logs FOR SELECT USING (true);
+CREATE POLICY "security_logs_insert" ON public.security_logs FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "security_logs_update" ON public.security_logs FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "security_logs_delete" ON public.security_logs FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ── Table: shifts ─────────────────────────────────────────────────────────────
+ALTER TABLE public.shifts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "shifts_select" ON public.shifts;
+DROP POLICY IF EXISTS "shifts_insert" ON public.shifts;
+DROP POLICY IF EXISTS "shifts_update" ON public.shifts;
+DROP POLICY IF EXISTS "shifts_delete" ON public.shifts;
+
+CREATE POLICY "shifts_select" ON public.shifts FOR SELECT USING (true);
+CREATE POLICY "shifts_insert" ON public.shifts FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "shifts_update" ON public.shifts FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "shifts_delete" ON public.shifts FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ── Table: sync_queue ─────────────────────────────────────────────────────────
+ALTER TABLE public.sync_queue ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "sync_queue_select" ON public.sync_queue;
+DROP POLICY IF EXISTS "sync_queue_insert" ON public.sync_queue;
+DROP POLICY IF EXISTS "sync_queue_update" ON public.sync_queue;
+DROP POLICY IF EXISTS "sync_queue_delete" ON public.sync_queue;
+
+CREATE POLICY "sync_queue_select" ON public.sync_queue FOR SELECT USING (true);
+CREATE POLICY "sync_queue_insert" ON public.sync_queue FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "sync_queue_update" ON public.sync_queue FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "sync_queue_delete" ON public.sync_queue FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ── Table: timetable_breaks ───────────────────────────────────────────────────
+ALTER TABLE public.timetable_breaks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "timetable_breaks_select" ON public.timetable_breaks;
+DROP POLICY IF EXISTS "timetable_breaks_insert" ON public.timetable_breaks;
+DROP POLICY IF EXISTS "timetable_breaks_update" ON public.timetable_breaks;
+DROP POLICY IF EXISTS "timetable_breaks_delete" ON public.timetable_breaks;
+
+CREATE POLICY "timetable_breaks_select" ON public.timetable_breaks FOR SELECT USING (true);
+CREATE POLICY "timetable_breaks_insert" ON public.timetable_breaks FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "timetable_breaks_update" ON public.timetable_breaks FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "timetable_breaks_delete" ON public.timetable_breaks FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ── Table: timetables ─────────────────────────────────────────────────────────
+ALTER TABLE public.timetables ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "timetables_select" ON public.timetables;
+DROP POLICY IF EXISTS "timetables_insert" ON public.timetables;
+DROP POLICY IF EXISTS "timetables_update" ON public.timetables;
+DROP POLICY IF EXISTS "timetables_delete" ON public.timetables;
+
+CREATE POLICY "timetables_select" ON public.timetables FOR SELECT USING (true);
+CREATE POLICY "timetables_insert" ON public.timetables FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "timetables_update" ON public.timetables FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "timetables_delete" ON public.timetables FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
+
+-- ── Table: unknown_fingerprint_logs ───────────────────────────────────────────
+ALTER TABLE public.unknown_fingerprint_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "unknown_fingerprint_logs_select" ON public.unknown_fingerprint_logs;
+DROP POLICY IF EXISTS "unknown_fingerprint_logs_insert" ON public.unknown_fingerprint_logs;
+DROP POLICY IF EXISTS "unknown_fingerprint_logs_update" ON public.unknown_fingerprint_logs;
+DROP POLICY IF EXISTS "unknown_fingerprint_logs_delete" ON public.unknown_fingerprint_logs;
+
+CREATE POLICY "unknown_fingerprint_logs_select" ON public.unknown_fingerprint_logs FOR SELECT USING (true);
+CREATE POLICY "unknown_fingerprint_logs_insert" ON public.unknown_fingerprint_logs FOR INSERT WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "unknown_fingerprint_logs_update" ON public.unknown_fingerprint_logs FOR UPDATE USING (auth.role() IN ('authenticated', 'service_role', 'anon')) WITH CHECK (auth.role() IN ('authenticated', 'service_role', 'anon'));
+CREATE POLICY "unknown_fingerprint_logs_delete" ON public.unknown_fingerprint_logs FOR DELETE USING (auth.role() IN ('authenticated', 'service_role', 'anon'));
