@@ -17,13 +17,13 @@ echo [*] Production Connector Domain: https://%NGROK_DOMAIN%
 echo.
 
 :: 1. Build and Start Web Dashboard in Production Mode
-echo [1/3] Building & Starting Web Dashboard (Next.js Production Port 3000)...
+echo [1/3] Building AND Starting Web Dashboard (Next.js Production Port 3000)...
 start "Web Dashboard [PROD]" cmd /k "cd /d "%ROOT_DIR%" && set NODE_ENV=production && pnpm --filter @hrms/web build && pnpm --filter @hrms/web start"
 
 timeout /t 3 /nobreak > nul
 
 :: 2. Build and Start Connector in Production Mode
-echo [2/3] Building & Starting Biometric TCP Connector (Port 4000)...
+echo [2/3] Building AND Starting Biometric TCP Connector (Port 4000)...
 start "Biometric Connector [PROD]" cmd /k "cd /d "%CONNECTOR_DIR%" && npm run build && npm run start"
 
 timeout /t 3 /nobreak > nul

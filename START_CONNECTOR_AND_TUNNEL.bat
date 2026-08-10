@@ -1,9 +1,9 @@
 @echo off
-TITLE JRM Biometric Hardware Gateway & Ngrok Tunnel Launcher
+TITLE JRM Biometric Hardware Gateway AND Ngrok Tunnel Launcher
 COLOR 0A
 
 echo ==============================================================================
-echo   JRM HRMS - AUTOMATIC BIOMETRIC CONNECTOR & NGROK LAUNCHER
+echo   JRM HRMS - AUTOMATIC BIOMETRIC CONNECTOR AND NGROK LAUNCHER
 echo ==============================================================================
 echo.
 
@@ -37,4 +37,3 @@ echo  Both services are running in the background.
 echo  You can now monitor live attendance on Vercel!
 echo ==============================================================================
 echo.
-pause
