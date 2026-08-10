@@ -27,7 +27,7 @@ export function formatTimeAmPm(isoOrTimeStr: string): string {
   try {
     const d = new Date(isoOrTimeStr);
     if (!isNaN(d.getTime())) {
-      return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      return d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
     }
   } catch (e) {}
   return isoOrTimeStr;
@@ -335,15 +335,15 @@ export function calculateNetSummaryForEvents(
 
   if (checkInEvt?.eventTime) {
     const d = new Date(checkInEvt.eventTime);
-    const dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
-    const timeLabel = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+    const dateLabel = d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: '2-digit' });
+    const timeLabel = d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
     checkInTimeStr = `${dateLabel} • ${timeLabel}`;
   }
 
   if (checkOutEvt?.eventTime) {
     const d = new Date(checkOutEvt.eventTime);
-    const dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
-    const timeLabel = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+    const dateLabel = d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: '2-digit' });
+    const timeLabel = d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
     checkOutTimeStr = `${dateLabel} • ${timeLabel}`;
   }
 

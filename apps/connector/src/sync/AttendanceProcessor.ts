@@ -48,10 +48,11 @@ export class AttendanceProcessor {
    */
   static async processPunch(raw: RawPunchLog): Promise<any> {
     const punchTime = new Date(raw.event_time);
-    const dateStr = punchTime.toISOString().split('T')[0]; // YYYY-MM-DD
+    const dateStr = punchTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD in IST
     const rawUserIdStr = String(raw.device_user_id).trim();
+    const timeStrIST = punchTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
-    console.log(`\n⚙️ [AttendanceProcessor] Processing raw punch for User ID "${rawUserIdStr}" at ${punchTime.toLocaleTimeString()} (${raw.device_ip})`);
+    console.log(`\n⚙️ [AttendanceProcessor] Processing raw punch for User ID "${rawUserIdStr}" at ${timeStrIST} (${raw.device_ip})`);
 
     // STEP 1: Always store raw event into attendance_events (Immutable Audit Trail)
     const rawEvtId = `EVT-RAW-${rawUserIdStr}-${Date.now()}`;
@@ -269,6 +270,18 @@ export class AttendanceProcessor {
     return inserted;
   }
 
+  private static getISTMinutes(date: Date): number {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    }).formatToParts(date);
+    const h = parseInt(parts.find((p) => p.type === 'hour')?.value || '0', 10);
+    const m = parseInt(parts.find((p) => p.type === 'minute')?.value || '0', 10);
+    return h * 60 + m;
+  }
+
   /**
    * Evaluates punch time against shift timetables & State Machine.
    * Uses ONLY columns that exist in the attendance_sessions DB table.
@@ -280,7 +293,7 @@ export class AttendanceProcessor {
     shift: ShiftTimetable,
     empCode: string
   ): { eventType: string; lateMins: number; earlyMins: number; userMessage: string; userSubtext: string } {
-    const punchMins = punchTime.getHours() * 60 + punchTime.getMinutes();
+    const punchMins = this.getISTMinutes(punchTime);
     const currentPunchMs = punchTime.getTime();
 
     const [shInH, shInM] = shift.check_in_time.split(':').map(Number);
@@ -425,8 +438,12 @@ export class AttendanceProcessor {
    */
   private static async updateAttendanceRecord(empCode: string, empName: string, dept: string, session: any, deviceIp: string): Promise<void> {
     const recId = `LOG-${session.session_date}-${empCode}`;
-    const checkInStr = session.check_in_time ? new Date(session.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : null;
-    const checkOutStr = session.check_out_time ? new Date(session.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : null;
+    const checkInStr = session.check_in_time
+      ? new Date(session.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+      : null;
+    const checkOutStr = session.check_out_time
+      ? new Date(session.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+      : null;
 
     try {
       await supabase.from('attendance_records').upsert([{

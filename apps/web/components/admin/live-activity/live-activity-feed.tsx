@@ -24,7 +24,7 @@ interface FeedItem {
 
 function formatFeedTime(iso: string): string {
   try {
-    return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+    return new Date(iso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   } catch {
     return iso;
   }
