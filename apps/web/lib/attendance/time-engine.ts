@@ -109,11 +109,8 @@ export async function refreshEmployeeLookupCache(): Promise<void> {
 export async function syncSupabaseEvents(force = false): Promise<void> {
   try {
     await refreshEmployeeLookupCache();
-    if (force) {
-      eventsStore = [];
-    }
-    let hasNew = false;
-    const existingIds = new Set(eventsStore.map((e) => e.id));
+    const newStore: AttendanceEvent[] = [];
+    const existingIds = new Set<string>();
 
     // 1. Fetch attendance_events from Supabase
     const { data: eventRows } = await supabase
@@ -128,7 +125,7 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
           const finalEmpId = resolved?.id || row.employee_id;
           const finalEmpName = resolved?.name || (row.employee_name && !row.employee_name.startsWith('User ') ? row.employee_name : `Employee ${row.employee_id}`);
 
-          eventsStore.push({
+          newStore.push({
             id: row.id,
             sessionId: row.session_id || `sess-${finalEmpId}`,
             employeeId: finalEmpId,
@@ -141,7 +138,6 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
             notes: row.notes,
           });
           existingIds.add(row.id);
-          hasNew = true;
         }
       });
     }
@@ -222,7 +218,7 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
             else if (s === 'field_visit_end') eventType = 'FIELD_VISIT_END';
             else if (s === 'checked_out') eventType = 'CHECK_OUT';
 
-            eventsStore.push({
+            newStore.push({
               id: checkInEvtId,
               sessionId: `sess-${empId}`,
               employeeId: empId,
@@ -236,7 +232,6 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
               ...(recDept && recDept !== 'Staff' ? { department: recDept } : {}),
             } as any);
             existingIds.add(checkInEvtId);
-            hasNew = true;
           }
         }
 
@@ -245,7 +240,7 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
           const checkOutEvtId = `rec-out-${rec.id}`;
           if (!existingIds.has(checkOutEvtId)) {
             const eventTime = buildISOFromDisplayTime(rec.check_out_time, createdAt);
-            eventsStore.push({
+            newStore.push({
               id: checkOutEvtId,
               sessionId: `sess-${empId}`,
               employeeId: empId,
@@ -259,24 +254,20 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
               ...(recDept && recDept !== 'Staff' ? { department: recDept } : {}),
             } as any);
             existingIds.add(checkOutEvtId);
-            hasNew = true;
           }
         }
       });
     }
 
-    if (hasNew) {
-      // Deduplicate eventsStore by ID to guarantee 100% unique event IDs
-      const uniqueEventsMap = new Map<string, AttendanceEvent>();
-      eventsStore.forEach((evt) => {
-        if (!uniqueEventsMap.has(evt.id)) {
-          uniqueEventsMap.set(evt.id, evt);
-        }
-      });
-      eventsStore = Array.from(uniqueEventsMap.values());
-
-      notifySubscribers();
-    }
+    // Deduplicate newStore by ID to guarantee 100% unique event IDs
+    const uniqueEventsMap = new Map<string, AttendanceEvent>();
+    newStore.forEach((evt) => {
+      if (!uniqueEventsMap.has(evt.id)) {
+        uniqueEventsMap.set(evt.id, evt);
+      }
+    });
+    eventsStore = Array.from(uniqueEventsMap.values());
+    notifySubscribers();
   } catch (e) {}
 }
 
