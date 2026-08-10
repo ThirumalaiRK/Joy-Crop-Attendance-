@@ -29,12 +29,12 @@ export interface Company {
 
 export const DEFAULT_COMPANY: Company = {
   id: 'COMP-001',
-  name: 'AgencyOS Pvt. Ltd.',
+  name: 'Joy Corporate Solutions Pvt. Ltd.',
   code: 'COMP-001',
   logo: '🏢',
   plan: 'Enterprise',
   status: 'Active',
-  contact_email: 'admin@agencyos.ai',
+  contact_email: 'admin@joycorporate.com',
   storage_used: '4.2 GB',
   api_usage: '28 / 10,000',
   renewal_date: '2027-01-01',
