@@ -95,26 +95,26 @@ export function ShiftManager() {
     use_first_checkin_last_checkout: true,
   });
 
-  // Breaks List State
+  // Breaks List State (Default 1:00 PM - 2:00 PM / 13:00 - 14:00 Auto Deduct)
   const [breaks, setBreaks] = useState<TimetableBreak[]>([
     {
       break_name: 'Lunch Break',
-      start_time: '12:00',
-      ahead_to: '12:30',
-      end_time: '13:00',
-      delay_to: '13:30',
+      start_time: '13:00',
+      ahead_to: '13:30',
+      end_time: '14:00',
+      delay_to: '14:30',
       break_duration_mins: 60,
       deduct_type: 'auto_deduct',
     },
   ]);
 
-  // Break Modal Editing Form State matching Screenshot 2
+  // Break Modal Editing Form State
   const [editingBreak, setEditingBreak] = useState<TimetableBreak>({
     break_name: 'Lunch Break',
-    start_time: '12:00',
-    ahead_to: '12:30',
-    end_time: '13:00',
-    delay_to: '13:30',
+    start_time: '13:00',
+    ahead_to: '13:30',
+    end_time: '14:00',
+    delay_to: '14:30',
     break_duration_mins: 60,
     deduct_type: 'auto_deduct',
   });

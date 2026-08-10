@@ -28,15 +28,15 @@ const DEFAULT_SHIFT: ShiftTimetable = {
   id: 'SHIFT-DEFAULT',
   name: 'Standard Office Shift',
   check_in_time: '09:00',
-  check_out_time: '18:00',
+  check_out_time: '16:00',
   check_in_start: '07:00',
   check_in_end: '11:00',
   check_out_start: '16:00',
   check_out_end: '22:00',
   late_allowed_mins: 5,
   early_out_allowed_mins: 5,
-  lunch_start: '12:30',
-  lunch_end: '14:30',
+  lunch_start: '13:00',
+  lunch_end: '14:00',
 };
 
 // In-memory cooldown tracker: empCode -> last punch timestamp (ms)
@@ -419,12 +419,23 @@ export class AttendanceProcessor {
       updatePayload.check_out_time = isoTime;
       updatePayload.is_finalized = true;
 
-      // Calculate total & net work minutes
-      const startT = new Date(session.check_in_time || isoTime).getTime();
-      const endT = punchTime.getTime();
-      const totalMins = Math.max(0, Math.round((endT - startT) / (1000 * 60)));
-      const breakMins = session.break_time_mins || 60; // default 60m lunch deduction
-      const netMins = Math.max(0, totalMins - breakMins);
+      // Calculate total worked span
+      const startT = new Date(session.check_in_time || isoTime);
+      const endT = punchTime;
+      const totalMins = Math.max(0, Math.round((endT.getTime() - startT.getTime()) / (1000 * 60)));
+
+      // Calculate 1:00 PM - 2:00 PM (13:00 - 14:00) Lunch Overlap
+      const startISTMins = this.getISTMinutes(startT);
+      const endISTMins = this.getISTMinutes(endT);
+      const lunchStartMins = 13 * 60; // 780 mins
+      const lunchEndMins = 14 * 60;   // 840 mins
+      const overlapStart = Math.max(startISTMins, lunchStartMins);
+      const overlapEnd = Math.min(endISTMins, lunchEndMins);
+      const lunchOverlapMins = Math.max(0, overlapEnd - overlapStart);
+      const lunchDeductionMins = Math.min(lunchOverlapMins, 60);
+
+      const breakMins = session.break_time_mins || 0;
+      const netMins = Math.max(0, totalMins - breakMins - lunchDeductionMins);
 
       updatePayload.total_time_mins = totalMins;
       updatePayload.net_work_mins = netMins;
@@ -432,8 +443,6 @@ export class AttendanceProcessor {
       updatePayload.early_exit_mins = cls.earlyMins;
       updatePayload.overtime_mins = netMins > 480 ? netMins - 480 : 0;
     }
-    // Note: LUNCH_OUT / LUNCH_IN require separate columns not yet in schema.
-    // They are skipped here but audit events are still logged.
 
     const { data: updated, error } = await supabase
       .from('attendance_sessions')

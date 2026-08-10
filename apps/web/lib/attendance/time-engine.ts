@@ -320,6 +320,19 @@ function notifySubscribers() {
   });
 }
 
+// Helper: Convert Date to IST minutes from midnight
+function getISTMinutes(d: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(d);
+  const h = parseInt(parts.find((p) => p.type === 'hour')?.value || '0', 10);
+  const m = parseInt(parts.find((p) => p.type === 'minute')?.value || '0', 10);
+  return h * 60 + m;
+}
+
 // ─── TIME CALCULATION ENGINE ─────────────────────────────────────────────────
 
 export function calculateNetSummaryForEvents(
@@ -332,7 +345,7 @@ export function calculateNetSummaryForEvents(
   const sorted = [...events].sort((a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime());
   const lastEvent = sorted[sorted.length - 1];
 
-  // Check-in event for today's session (prioritizes explicit CHECK_IN event over RAW_PUNCH)
+  // First check-in event for today's session
   const checkInEvt = sorted.find((e) => e.eventType === 'CHECK_IN') ||
     sorted.find((e) => (e.eventType as string) === 'RAW_PUNCH') ||
     sorted[0];
@@ -369,7 +382,7 @@ export function calculateNetSummaryForEvents(
     totalTimeMinutes = Math.max(0, Math.round((nowMs - startMs) / (1000 * 60)));
   }
 
-  // Calculate Tea Breaks
+  // 1. Calculate Explicit Tea/Coffee Breaks
   let breakDurationMinutes = 0;
   for (let i = 0; i < sorted.length; i++) {
     if (sorted[i].eventType === 'BREAK_START') {
@@ -381,19 +394,7 @@ export function calculateNetSummaryForEvents(
     }
   }
 
-  // Calculate Lunch Duration
-  let lunchDurationMinutes = 0;
-  for (let i = 0; i < sorted.length; i++) {
-    if (sorted[i].eventType === 'LUNCH_START') {
-      const endEvt = sorted.slice(i + 1).find((e) => e.eventType === 'LUNCH_END');
-      if (endEvt) {
-        const diff = Math.round((new Date(endEvt.eventTime).getTime() - new Date(sorted[i].eventTime).getTime()) / (1000 * 60));
-        lunchDurationMinutes += Math.max(0, diff);
-      }
-    }
-  }
-
-  // Calculate Meeting Duration
+  // 2. Calculate Meeting Duration
   let meetingDurationMinutes = 0;
   for (let i = 0; i < sorted.length; i++) {
     if (sorted[i].eventType === 'MEETING_OUT') {
@@ -405,7 +406,7 @@ export function calculateNetSummaryForEvents(
     }
   }
 
-  // Calculate Field Duration
+  // 3. Calculate Field Duration
   let fieldDurationMinutes = 0;
   for (let i = 0; i < sorted.length; i++) {
     if (sorted[i].eventType === 'FIELD_VISIT_START') {
@@ -417,39 +418,99 @@ export function calculateNetSummaryForEvents(
     }
   }
 
-  // Net Working Hours Formula = Total Time - Tea Break - Lunch
-  const workingTimeMinutes = Math.max(0, totalTimeMinutes - breakDurationMinutes - lunchDurationMinutes);
-
-  // Late Minutes Calculation (09:00 AM + 15 mins grace = 09:15 AM)
-  let lateMinutes = 0;
-  if (checkInEvt) {
-    const checkInDate = new Date(checkInEvt.eventTime);
-    const targetDate = new Date(checkInEvt.eventTime);
-    targetDate.setHours(9, 15, 0, 0); // Grace target
-    if (checkInDate > targetDate) {
-      lateMinutes = Math.round((checkInDate.getTime() - targetDate.getTime()) / (1000 * 60));
+  // 4. Calculate Explicit Lunch Punches vs Automatic Lunch Deduction (13:00 - 14:00 IST)
+  let explicitLunchMinutes = 0;
+  let explicitLunchTimes: { start: string; end: string }[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i].eventType === 'LUNCH_START') {
+      const endEvt = sorted.slice(i + 1).find((e) => e.eventType === 'LUNCH_END');
+      if (endEvt) {
+        const diff = Math.round((new Date(endEvt.eventTime).getTime() - new Date(sorted[i].eventTime).getTime()) / (1000 * 60));
+        explicitLunchMinutes += Math.max(0, diff);
+        explicitLunchTimes.push({
+          start: new Date(sorted[i].eventTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
+          end: new Date(endEvt.eventTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
+        });
+      }
     }
   }
 
-  // Overtime Calculation (Working Hours > 8 Hours / 480 Mins)
+  // Default Timetable Lunch Window: 01:00 PM (13:00) to 02:00 PM (14:00) in IST
+  const LUNCH_WINDOW_START_MINS = 13 * 60; // 780 mins (13:00)
+  const LUNCH_WINDOW_END_MINS = 14 * 60;   // 840 mins (14:00)
+  const MAX_LUNCH_DURATION_MINS = 60;      // 60 minutes
+
+  let lunchDurationMinutes = 0;
+  let lunchBreakMode: 'AUTO' | 'ACTUAL' | 'NONE' = 'NONE';
+  let lunchDetails = 'No lunch overlap (0m)';
+  let automaticBreakMinutes = 0;
+
+  if (explicitLunchMinutes > 0) {
+    // ── PRIORITY 2: Explicit Biometric Break Punches Exist ────────────────────
+    // Use actual punched duration — DO NOT double deduct automatic lunch!
+    lunchDurationMinutes = explicitLunchMinutes;
+    lunchBreakMode = 'ACTUAL';
+    const rangeText = explicitLunchTimes.map((t) => `${t.start} – ${t.end}`).join(', ');
+    lunchDetails = `Actual ${explicitLunchMinutes}m (${rangeText})`;
+  } else if (checkInEvt) {
+    // ── PRIORITY 3: Automatic Timetable Lunch Deduction (13:00 - 14:00) ──────
+    // Calculate exact overlap between attendance span and [13:00, 14:00] in IST
+    const startISTMins = getISTMinutes(new Date(checkInEvt.eventTime));
+    const endISTMins = checkOutEvt
+      ? getISTMinutes(new Date(checkOutEvt.eventTime))
+      : getISTMinutes(new Date()); // In progress -> current time in IST
+
+    // Overlap formula: max(0, min(end, lunchEnd) - max(start, lunchStart))
+    const overlapStart = Math.max(startISTMins, LUNCH_WINDOW_START_MINS);
+    const overlapEnd = Math.min(endISTMins, LUNCH_WINDOW_END_MINS);
+    const overlapMins = Math.max(0, overlapEnd - overlapStart);
+
+    if (overlapMins > 0) {
+      automaticBreakMinutes = Math.min(overlapMins, MAX_LUNCH_DURATION_MINS);
+      lunchDurationMinutes = automaticBreakMinutes;
+      lunchBreakMode = 'AUTO';
+      lunchDetails = `Auto 1:00 PM – 2:00 PM (${automaticBreakMinutes}m deducted)`;
+    } else {
+      lunchDurationMinutes = 0;
+      lunchBreakMode = 'NONE';
+      lunchDetails = 'No lunch overlap (0m)';
+    }
+  }
+
+  // 5. Net Working Hours Formula = Total Time - Tea Breaks - Lunch Break - Meetings/Field
+  const grossWorkingMinutes = totalTimeMinutes;
+  const workingTimeMinutes = Math.max(0, grossWorkingMinutes - breakDurationMinutes - lunchDurationMinutes);
+
+  // 6. Late Minutes Calculation (09:00 AM + 5 mins grace = 09:05 AM)
+  let lateMinutes = 0;
+  if (checkInEvt) {
+    const checkInISTMins = getISTMinutes(new Date(checkInEvt.eventTime));
+    const shiftInMins = 9 * 60; // 09:00 AM
+    const graceMins = 5;
+    if (checkInISTMins > shiftInMins + graceMins) {
+      lateMinutes = checkInISTMins - shiftInMins;
+    }
+  }
+
+  // 7. Overtime Calculation (Working Hours > 8 Hours / 480 Mins)
   const shiftTargetMinutes = shiftRule.minWorkingHours * 60; // 480 mins
   const overtimeMinutes = Math.max(0, workingTimeMinutes - shiftTargetMinutes);
 
-  // Early Exit Minutes Calculation
+  // 8. Early Exit Minutes Calculation (04:00 PM / 16:00)
   let earlyExitMinutes = 0;
   if (checkOutEvt) {
-    const checkOutDate = new Date(checkOutEvt.eventTime);
-    const targetExit = new Date(checkOutEvt.eventTime);
-    targetExit.setHours(18, 0, 0, 0); // 06:00 PM
-    if (checkOutDate < targetExit) {
-      earlyExitMinutes = Math.round((targetExit.getTime() - checkOutDate.getTime()) / (1000 * 60));
+    const checkOutISTMins = getISTMinutes(new Date(checkOutEvt.eventTime));
+    const shiftOutMins = 16 * 60; // 04:00 PM (16:00)
+    const earlyGraceMins = 5;
+    if (checkOutISTMins < shiftOutMins - earlyGraceMins) {
+      earlyExitMinutes = shiftOutMins - checkOutISTMins;
     }
   }
 
-  // Payable Hours for Payroll
+  // 9. Payable Hours for Payroll
   const payableHours = parseFloat((workingTimeMinutes / 60).toFixed(2));
 
-  // Current Live Status Determination
+  // 10. Current Live Status Determination
   let status: AttendanceStatus = 'PRESENT';
 
   if (!checkInEvt) {
@@ -471,9 +532,26 @@ export function calculateNetSummaryForEvents(
         status = 'ON_FIELD_VISIT';
         break;
       default:
-        status = 'PRESENT';
+        status = lateMinutes > 0 ? 'LATE' : 'PRESENT';
     }
   }
+
+  // 11. Complete Calculation Breakdown Structure for Transparency
+  const calculationBreakdown = {
+    firstCheckIn: checkInTimeStr,
+    lastCheckOut: isCurrentlyCheckedOut ? checkOutTimeStr : 'In Progress (Working Now)',
+    grossSpanMinutes: totalTimeMinutes,
+    teaBreakMinutes: breakDurationMinutes,
+    lunchBreakMinutes: lunchDurationMinutes,
+    lunchBreakType: (lunchBreakMode === 'AUTO' ? 'AUTO_DEDUCT' : lunchBreakMode === 'ACTUAL' ? 'EXPLICIT_PUNCH' : 'NONE') as any,
+    lunchBreakDetails: lunchDetails,
+    otherBreakMinutes: meetingDurationMinutes + fieldDurationMinutes,
+    netWorkingMinutes: workingTimeMinutes,
+    lateMinutes,
+    earlyExitMinutes,
+    overtimeMinutes,
+    isCompleted: isCurrentlyCheckedOut,
+  };
 
   return {
     id: `sum-${employeeId}-${TODAY_STR}`,
@@ -485,8 +563,13 @@ export function calculateNetSummaryForEvents(
     checkInTime: checkInTimeStr,
     checkOutTime: checkOutTimeStr,
     totalTimeMinutes,
+    grossWorkingMinutes,
     breakDurationMinutes,
+    explicitBreakMinutes: explicitLunchMinutes,
+    automaticBreakMinutes,
     lunchDurationMinutes,
+    lunchBreakMode,
+    lunchDetails,
     meetingDurationMinutes,
     fieldDurationMinutes,
     workingTimeMinutes,
@@ -497,6 +580,7 @@ export function calculateNetSummaryForEvents(
     status,
     shiftTargetMinutes,
     eventsCount: sorted.length,
+    calculationBreakdown,
   };
 }
 

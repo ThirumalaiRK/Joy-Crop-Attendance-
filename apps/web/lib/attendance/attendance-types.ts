@@ -60,6 +60,22 @@ export interface AttendanceSession {
   createdAt: string;
 }
 
+export interface CalculationBreakdown {
+  firstCheckIn: string;
+  lastCheckOut: string;
+  grossSpanMinutes: number;
+  teaBreakMinutes: number;
+  lunchBreakMinutes: number;
+  lunchBreakType: 'AUTO_DEDUCT' | 'EXPLICIT_PUNCH' | 'NONE';
+  lunchBreakDetails: string;
+  otherBreakMinutes: number;
+  netWorkingMinutes: number;
+  lateMinutes: number;
+  earlyExitMinutes: number;
+  overtimeMinutes: number;
+  isCompleted: boolean;
+}
+
 export interface AttendanceSummary {
   id: string;
   employeeId: string;
@@ -69,12 +85,17 @@ export interface AttendanceSummary {
   date: string;
   checkInTime?: string;
   checkOutTime?: string;
-  totalTimeMinutes: number;
+  totalTimeMinutes: number; // Gross attendance span minutes
+  grossWorkingMinutes?: number;
   breakDurationMinutes: number; // Tea/other breaks
+  explicitBreakMinutes?: number;
+  automaticBreakMinutes?: number;
   lunchDurationMinutes: number;
+  lunchBreakMode?: 'AUTO' | 'ACTUAL' | 'NONE';
+  lunchDetails?: string;
   meetingDurationMinutes: number;
   fieldDurationMinutes: number;
-  workingTimeMinutes: number; // Net Working Hours = Total - Breaks - Lunch
+  workingTimeMinutes: number; // Net Working Hours = Gross - Tea Breaks - Lunch
   lateMinutes: number;
   earlyExitMinutes: number;
   overtimeMinutes: number;
@@ -82,6 +103,7 @@ export interface AttendanceSummary {
   status: AttendanceStatus;
   shiftTargetMinutes: number; // e.g. 480 (8 hours)
   eventsCount: number;
+  calculationBreakdown?: CalculationBreakdown;
 }
 
 export interface ShiftRule {
