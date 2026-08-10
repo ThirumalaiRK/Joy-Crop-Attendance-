@@ -30,7 +30,8 @@ import { eventBus } from '../../../lib/events/event-bus';
 
 export function AttendanceCommandCenter() {
   const { salutation, icon, tagline } = useDynamicTimeGreeting('Joy Corporate Admin');
-  const TODAY_STR = new Date().toISOString().split('T')[0];
+  // Use IST date - on Vercel (UTC server) toISOString().split('T')[0] returns the UTC date
+  const TODAY_STR = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const [selectedDate, setSelectedDate] = useState<string>(TODAY_STR);
   const [dateScope, setDateScope] = useState<'today' | 'custom_date' | 'month' | 'all'>('today');
 
@@ -86,7 +87,8 @@ export function AttendanceCommandCenter() {
       present: uniqueRows.filter((r) => r.status === 'present').length,
       late: uniqueRows.filter((r) => r.status === 'late').length,
       overtime: uniqueRows.filter((r) => r.status === 'overtime').length,
-      inside: uniqueRows.filter((r) => !r.check_out_time).length,
+      // '—' is truthy — only count employees who have NO real check-out time
+      inside: uniqueRows.filter((r) => !r.check_out_time || r.check_out_time === '—' || r.check_out_time === '-').length,
     });
     setLoading(false);
   };
@@ -579,19 +581,28 @@ export function AttendanceCommandCenter() {
                         <td className="px-4 py-3 text-slate-400">{r.department || '—'}</td>
                         <td className="px-4 py-3 font-mono text-emerald-400 font-bold">{r.check_in_time || '—'}</td>
                         <td className="px-4 py-3 font-mono text-purple-400">
-                          {r.check_out_time || <span className="text-slate-600">—</span>}
+                          {(r.check_out_time && r.check_out_time !== '—' && r.check_out_time !== '-')
+                            ? r.check_out_time
+                            : <span className="text-slate-600">—</span>}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={clsx(
-                            'px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase',
-                            r.check_out_time
-                              ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                              : r.status === 'late'
-                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                          )}>
-                            {r.check_out_time ? 'Checked Out' : r.status}
-                          </span>
+                          {/* IMPORTANT: '—' (em dash) is truthy — only treat as checked-out if it's a real time string */}
+                          {(() => {
+                            const hasRealCheckOut = r.check_out_time && r.check_out_time !== '—' && r.check_out_time !== '-';
+                            const isLate = r.status === 'late';
+                            return (
+                              <span className={clsx(
+                                'px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase',
+                                hasRealCheckOut
+                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                  : isLate
+                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              )}>
+                                {hasRealCheckOut ? 'Checked Out' : r.status || 'present'}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-slate-400 capitalize">{r.method || '—'}</td>
                         <td className="px-4 py-3 text-slate-500 text-[10px]">
