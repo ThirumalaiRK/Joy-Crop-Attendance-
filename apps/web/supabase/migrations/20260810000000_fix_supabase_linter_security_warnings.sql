@@ -7,12 +7,14 @@
 -- ==============================================================================
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 1. FIX: function_search_path_mutable (update_timestamp_column)
+-- 1. FIX: function_search_path_mutable & security_definer_executable
+--    (update_timestamp_column is a trigger function; use SECURITY INVOKER and
+--     revoke direct RPC execution from anon & authenticated roles)
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.update_timestamp_column()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
@@ -20,6 +22,11 @@ BEGIN
    RETURN NEW;
 END;
 $$;
+
+-- Revoke direct RPC execution on trigger function
+REVOKE EXECUTE ON FUNCTION public.update_timestamp_column() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.update_timestamp_column() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.update_timestamp_column() FROM authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 2. FIX: rls_policy_always_true (Drop overly permissive ALL/Write policies)
