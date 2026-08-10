@@ -28,9 +28,9 @@ export interface Company {
 }
 
 export const DEFAULT_COMPANY: Company = {
-  id: 'COMP-001',
+  id: '00000000-0000-0000-0000-000000000000',
   name: 'Joy Corporate Solutions Pvt. Ltd.',
-  code: 'COMP-001',
+  code: 'JOY-CORP-01',
   logo: '🏢',
   plan: 'Enterprise',
   status: 'Active',
@@ -56,11 +56,11 @@ export class CompanyService {
         list = dbCompanies.map((c) => ({
           id: c.id,
           name: c.name || 'Unnamed Company',
-          code: c.code || c.id,
+          code: c.code || (c.id?.startsWith('00000000') ? 'JOY-CORP-01' : c.id),
           logo: c.logo || '🏢',
           plan: c.plan || 'Enterprise',
           status: (c.status as any) || 'Active',
-          contact_email: c.contact_email || 'admin@agencyos.ai',
+          contact_email: c.contact_email || 'admin@joycorporate.com',
           contact_phone: c.contact_phone || '',
           address: c.address || '',
           city: c.city || '',

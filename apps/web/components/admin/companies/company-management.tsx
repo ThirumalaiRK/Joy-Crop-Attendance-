@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   Layers, Plus, Settings, Users, MonitorSmartphone, ExternalLink,
-  Shield, Zap, RefreshCw, Radio, Check, X, Trash2, Edit2, AlertTriangle, Building
+  Shield, Zap, RefreshCw, Radio, Check, X, Trash2, Edit2, AlertTriangle, Building,
+  Building2, Mail, Globe, Hash, ShieldCheck
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { Company, CompanyService } from '../../../lib/services/company-service';
@@ -217,29 +218,48 @@ export function CompanyManagement() {
         </div>
       ) : (
         companies.map((comp) => (
-          <div key={comp.id} className="p-6 rounded-2xl border border-violet-500/20 bg-violet-500/5 space-y-6">
+          <div key={comp.id} className="p-6 rounded-2xl border border-violet-500/20 bg-gradient-to-b from-violet-500/[0.07] to-slate-900/40 backdrop-blur-sm space-y-6 shadow-xl">
             {/* Company Card Header */}
             <div className="flex items-start justify-between flex-wrap gap-4">
               <div className="flex items-center gap-4">
-                <div className="text-4xl p-3 rounded-2xl bg-slate-900/60 border border-slate-800">{comp.logo || '🏢'}</div>
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500/25 to-indigo-600/15 border border-violet-500/30 flex items-center justify-center text-violet-300 shadow-inner flex-shrink-0">
+                  <Building2 className="w-7 h-7" />
+                </div>
                 <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="text-lg font-bold text-white">{comp.name}</h2>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h2 className="text-lg font-bold text-white tracking-tight">{comp.name}</h2>
                     <span
                       className={clsx(
-                        'px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider',
+                        'px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider',
                         comp.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
                         comp.status === 'Setup' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
                         'bg-red-500/10 text-red-400 border-red-500/20'
                       )}
                     >
-                      {comp.status}
+                      ● {comp.status}
                     </span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-violet-500/15 text-violet-300 border border-violet-500/30 uppercase tracking-wider">
                       {comp.plan}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">ID: {comp.id} · {comp.contact_email}</p>
+                  
+                  {/* Clean Enterprise Identifier & Metadata Strip */}
+                  <div className="flex items-center gap-2.5 flex-wrap text-xs text-slate-400 mt-2">
+                    <div className="flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-0.5 rounded-lg border border-slate-800 font-mono text-[11px] text-violet-300">
+                      <span className="text-slate-500 font-sans text-[10px] uppercase font-semibold">Tenant</span>
+                      <span className="font-bold">{comp.code || 'JOY-CORP-01'}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-slate-400 text-xs bg-slate-900/40 px-2.5 py-0.5 rounded-lg border border-slate-800/60">
+                      <Mail className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{comp.contact_email || 'admin@joycorporate.com'}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-slate-400 text-xs bg-slate-900/40 px-2.5 py-0.5 rounded-lg border border-slate-800/60">
+                      <Globe className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{comp.country || 'India'} · {comp.timezone || 'IST (UTC+5:30)'}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
