@@ -1,0 +1,39 @@
+{
+  "name": "@hrms/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron .",
+    "build:exe": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.hrms.liveattendance",
+    "productName": "HRMS Live Attendance",
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "assets/**/*",
+      "../connector/dist/**/*",
+      "../connector/node_modules/**/*",
+      "../connector/package.json"
+    ]
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8"
+  }
+}

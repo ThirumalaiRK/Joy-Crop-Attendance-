@@ -1,0 +1,76 @@
+# JRM HRMS Enterprise V3.0 Production Integration Implementation Plan
+
+This implementation plan covers the transition of JRM HRMS Enterprise from a partially mocked state to a 100% database-backed, real-time sync system using Supabase and the Local TCP Connector.
+
+## User Review Required
+
+> [!IMPORTANT]
+> - **Database Schema Provisioning**: We will write a comprehensive SQL schema file [supabase_vms_and_tenant_tables.sql](file:///f:/TEST%20LIVE%20ATTENDANCE/supabase_vms_and_tenant_tables.sql) to create `visitors`, `visitor_passes`, `visitor_logs`, `visitor_audit_logs`, `visitor_notifications`, `companies` (extended columns), and `branches` tables. The user should run this SQL script in the Supabase SQL editor.
+> - **Enrollment Queue Flow**: We will connect the Enrollment Queue UI strictly to database columns, query employee details using joins, and subscribe to Supabase realtime notifications for live status updates.
+> - **Visitor Management**: We will fully wire VMS to the database tables, removing all in-memory mock datasets and demo stats, and implementing complete CRUD operations.
+> - **Company & Branch Management**: Hardcoded company settings and branch arrays will be replaced with queries to database tables (`companies`, `branches`).
+> - **Device Connector & TCP Live Panel**: Connect device statistics and connection health state to live database heartbeat logs and real-time events.
+
+---
+
+## Proposed Changes
+
+### Database Setup
+
+#### [NEW] [supabase_vms_and_tenant_tables.sql](file:///f:/TEST%20LIVE%20ATTENDANCE/supabase_vms_and_tenant_tables.sql)
+- Creates tables for:
+  - `visitors` (id, visitor_code, full_name, photo_url, mobile, email, company_name, government_id_type, government_id_number, vehicle_number, emergency_contact, status, created_at)
+  - `visitor_passes` (id, visitor_id, visitor_name, visitor_company, visitor_photo, visitor_mobile, host_employee_id, host_employee_name, host_department, branch_id, branch_name, visit_date, expected_checkin, expected_checkout, purpose, meeting_room, notes, qr_code, approval_status, pass_status, check_in_time, check_out_time, actual_duration, created_at)
+  - `visitor_logs` (id, visitor_pass_id, visitor_name, event_type, event_time, method, notes, created_at)
+  - `visitor_notifications` (id, visitor_pass_id, employee_id, employee_name, visitor_name, notification_type, message, status, created_at)
+  - `visitor_audit_logs` (id, pass_id, action, actor, details, created_at)
+- Adds extended columns to `companies` (logo, plan, status, company_code, storage_used, api_usage, renewal_date, contact_email) if not present.
+- Creates `branches` table (id, company_id, name, location, timezone, shift, status, created_at) if not present.
+- Configures Supabase Realtime publication for VMS and tenant tables.
+
+---
+
+### VMS Services & Enrollment Queue
+
+#### [MODIFY] [vms-service.ts](file:///f:/TEST%20LIVE%20ATTENDANCE/apps/web/lib/vms/vms-service.ts)
+- Remove all static arrays `INITIAL_MOCK_VISITORS`, `INITIAL_MOCK_PASSES`, `INITIAL_MOCK_LOGS`, etc.
+- Implement strictly query-based retrievals for `fetchVisitors`, `fetchVisitorPasses`, `getVisitorStats`, and transaction creates.
+- Keep in-memory store reference only as an emergency empty fallback array.
+
+#### [MODIFY] [enrollment-queue.tsx](file:///f:/TEST%20LIVE%20ATTENDANCE/apps/web/components/admin/enrollment-queue/enrollment-queue.tsx)
+- Re-architect table columns to match detailed production queue statistics:
+  - Employee photo, name, department, branch (fetched via joins).
+  - Started time, status badges, finger template counts, retry counters, latency metrics.
+- Add real-time Supabase subscription on `enrollment_sessions` updates.
+
+---
+
+### Company & Branch Dashboards
+
+#### [MODIFY] [company-management.tsx](file:///f:/TEST%20LIVE%20ATTENDANCE/apps/web/components/admin/companies/company-management.tsx)
+- Retrieve company data from the `companies` database table.
+- Implement full CRUD actions: Create Company, Update Company, Delete Company (including cascading configurations), and Suspend/Restore.
+
+#### [MODIFY] [branch-management.tsx](file:///f:/TEST%20LIVE%20ATTENDANCE/apps/web/components/admin/branches/branch-management.tsx)
+- Fully wire to the `branches` database table, replacing `DEFAULT_BRANCHES` mock array.
+- Calculate live employee and device counts from databases.
+
+---
+
+### Device Connector & Diagnostics
+
+#### [MODIFY] [device-center-panel.tsx](file:///f:/TEST%20LIVE%20ATTENDANCE/apps/web/components/admin/device-diagnostics/device-center-panel.tsx)
+- Fetch active connector status, node version, machine name, and live TCP client socket connections from the database status logs.
+- Bind the TCP Connection Panel nodes (Browser, Connector, TCP, Device) to render real-time values from the websocket/TCP client service feed.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- Run `npx tsc --noEmit` inside `apps/web` to confirm clean typescript compilation.
+
+### Manual Verification
+- Deploy the SQL table schema in the Supabase SQL editor.
+- Verify that Visitor Management, Company Management, and Branch Management tabs load and persist data directly to Supabase.
+- Verify that employee creation places enrollment sessions in the real-time Enrollment Queue.

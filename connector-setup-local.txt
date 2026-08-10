@@ -1,0 +1,49 @@
+JRM BIOMETRIC ATTENDANCE SYSTEM - LOCAL SETUP GUIDE
+=====================================================
+
+When running the system locally, you have two components:
+1. Web Dashboard (React/Next.js) -> Running on http://localhost:3000 (or hosted on HTTPS)
+2. Connector Service (Node.js) -> Running on http://localhost:4000
+
+Here is how to configure and connect them:
+
+----------------------------------------------------------------------
+SCENARIO A: Both Web Dashboard and Connector are running locally (HTTP)
+----------------------------------------------------------------------
+If your Web Dashboard is running on http://localhost:3000, it can easily talk to the Connector on http://localhost:4000.
+
+1. Open 'apps/web/.env.local'
+2. Add the following line:
+   NEXT_PUBLIC_CONNECTOR_URL=http://localhost:4000
+3. Restart your Next.js dev server:
+   npm run dev
+
+----------------------------------------------------------------------
+SCENARIO B: Web Dashboard is hosted (HTTPS) but Connector is local (HTTP)
+----------------------------------------------------------------------
+If your Web Dashboard is deployed on a secure website (e.g., https://yourcompany.supabase.co or Vercel) and you are running the Connector locally, your browser will block the connection because of "Mixed Content" (HTTPS websites cannot make requests to insecure HTTP endpoints).
+
+To solve this, you have two options:
+
+METHOD 1: Use ngrok (Recommended & Easiest)
+------------------------------------------
+ngrok creates a secure HTTPS tunnel to your local connector.
+
+1. Download and install ngrok (https://ngrok.com)
+2. Run this command in your terminal:
+   ngrok http 4000
+3. Copy the secure Forwarding URL (it looks like: https://xxxx-xx-xx-xx.ngrok-free.app)
+4. Update your Web Dashboard's environment variables (e.g., on Vercel or in .env.local):
+   NEXT_PUBLIC_CONNECTOR_URL=https://xxxx-xx-xx-xx.ngrok-free.app
+5. Rebuild/Restart the Web Dashboard. The browser can now connect securely!
+
+METHOD 2: Allow Insecure Content in Browser Settings
+-----------------------------------------------------
+If you don't want to use ngrok, you can force your browser to allow connection to the local HTTP connector:
+
+In Google Chrome:
+1. Click the site settings icon (padlock/sliders) to the left of the URL in the address bar.
+2. Select "Site settings".
+3. Scroll down to "Insecure content".
+4. Change the dropdown setting from "Block (default)" to "Allow".
+5. Reload the dashboard page. It will now connect to http://localhost:4000.

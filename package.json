@@ -1,0 +1,17 @@
+{
+  "name": "hrms-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm -r dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "desktop:dev": "electron apps/desktop",
+    "desktop:build": "pnpm --filter @hrms/desktop build:exe",
+    "connector:start": "node apps/connector/dist/index.js",
+    "connector:service:install": "node apps/connector/scripts/install-service.js",
+    "connector:service:uninstall": "node apps/connector/scripts/uninstall-service.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

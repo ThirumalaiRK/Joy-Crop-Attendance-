@@ -1,0 +1,55 @@
+JRM BIOMETRIC ATTENDANCE SYSTEM - PRODUCTION SETUP GUIDE
+==========================================================
+
+In a production environment:
+1. The Web Dashboard is deployed on the cloud (e.g., https://dashboard.joycorporate.com)
+2. The biometric device (Identix K90 Pro) is on the local network of the office.
+3. The Connector service must run on a PC/Server inside the local network (so it can talk to the device over TCP 4370) and expose an HTTPS endpoint so the cloud dashboard can communicate with it.
+
+Here are the standard options for production setup:
+
+----------------------------------------------------------------------
+OPTION A: Secure Tunnel (Recommended, Easiest & Most Secure)
+----------------------------------------------------------------------
+This option exposes your local connector to the internet securely without port-forwarding or changing firewall rules.
+
+1. Deploy Cloudflare Tunnel (Free) or ngrok (Paid static domain):
+   - Using Cloudflare Tunnel:
+     a. Install 'cloudflared' on the local machine running the Connector.
+     b. Create a tunnel:
+        cloudflared tunnel create local-connector
+     c. Route the tunnel to a subdomain (e.g. connector.joycorporate.com):
+        cloudflared tunnel route dns local-connector connector.joycorporate.com
+     d. Run the tunnel pointing to the local port 4000:
+        cloudflared tunnel run --url http://localhost:4000 local-connector
+
+2. Update Web Dashboard Configuration:
+   - Configure the environment variable:
+     NEXT_PUBLIC_CONNECTOR_URL=https://connector.joycorporate.com
+   - Since it is HTTPS, there are no mixed-content blocks, and it is 100% secure.
+
+----------------------------------------------------------------------
+OPTION B: On-Premise Server with Reverse Proxy & SSL
+----------------------------------------------------------------------
+This option requires a public IP address or port-forwarding on the office router.
+
+1. Port-Forwarding:
+   - Route incoming TCP traffic on port 443 (HTTPS) of your public IP to the local server running the Connector.
+
+2. Setup Nginx Reverse Proxy on the local server:
+   - Install Nginx.
+   - Configure Nginx to listen on port 443 and proxy requests to http://localhost:4000.
+   - Install Let's Encrypt SSL certificate for Nginx using Certbot:
+     sudo certbot --nginx -d connector.joycorporate.com
+
+3. Update Web Dashboard Configuration:
+   - Set the environment variable:
+     NEXT_PUBLIC_CONNECTOR_URL=https://connector.joycorporate.com
+
+----------------------------------------------------------------------
+HOW TO TEST CONNECTION IN PRODUCTION:
+----------------------------------------------------------------------
+1. Check the Connector status in the Web Dashboard under "Connector Status" page.
+2. If it displays "Offline", open Chrome Developer Tools (F12) and look at the "Console" tab.
+3. If you see a CORS error, make sure the Connector service allows requests from your dashboard origin (the origin is configured in 'index.ts' under cors middleware, or defaults to '*' which is fine).
+4. If you see "Mixed Content" error, verify that the 'NEXT_PUBLIC_CONNECTOR_URL' starts with 'https://' and not 'http://'.
