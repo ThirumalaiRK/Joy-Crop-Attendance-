@@ -75,9 +75,17 @@ export class ZKTecoDevice extends EventEmitter implements IBiometricDevice {
   async getAttendanceLogs(): Promise<AttendanceLog[]> {
     try {
       const attendances = await this.device.getAttendances();
+      if (!attendances || !attendances.data) return [];
       return attendances.data || [];
-    } catch (error) {
-      console.error(`Failed to get attendance logs from ${this.ip}`, error);
+    } catch (error: any) {
+      console.warn(`⚠️ [ZKTecoDevice] Notice getting attendance logs from ${this.ip}:`, error?.message || error);
+      // Auto-reconnect if socket desynchronized or timed out
+      if (error?.message?.includes('TIMEOUT') || error?.message?.includes('subarray') || error?.err?.message?.includes('TIMEOUT')) {
+        try {
+          await this.disconnect();
+          await this.connect();
+        } catch (_) {}
+      }
       return [];
     }
   }

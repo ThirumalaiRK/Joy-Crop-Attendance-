@@ -1,4 +1,4 @@
-﻿import cron from "node-cron";
+import cron from "node-cron";
 import { AppDataSource, DeviceCache, AttendanceCache, UserCache } from "../db";
 import { supabase } from "../supabase";
 import { AttendanceProcessor } from "./AttendanceProcessor";
@@ -64,16 +64,19 @@ export const startSyncEngine = () => {
           }
         }
 
-        // 2. Delta attendance sync — only logs newer than last processed time
+        // 2. Delta attendance sync — only logs newer than last processed time (IST)
         const sinceMs = lastProcessedTime.get(dev.ip) ?? (() => {
-          const t = new Date(); t.setHours(0, 0, 0, 0); return t.getTime();
+          const istNowStr = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+          const t = new Date(istNowStr);
+          t.setHours(0, 0, 0, 0);
+          return t.getTime();
         })();
 
         let allLogs: any[] = [];
         try {
           allLogs = await device.getAttendanceLogs();
         } catch (err: any) {
-          console.warn(`[SyncEngine] getAttendanceLogs error for ${dev.ip}:`, err?.message);
+          console.warn(`[SyncEngine] getAttendanceLogs notice for ${dev.ip}:`, err?.message || err);
           continue;
         }
 
@@ -83,7 +86,8 @@ export const startSyncEngine = () => {
         });
 
         if (newLogs.length === 0) {
-          console.log(`[SyncEngine] No new logs for ${dev.ip} since ${new Date(sinceMs).toLocaleTimeString()}`);
+          const timeFormat = new Date(sinceMs).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
+          console.log(`[SyncEngine] No new logs for ${dev.ip} since ${timeFormat} IST`);
           continue;
         }
 

@@ -186,8 +186,13 @@ process.on('uncaughtException', (err) => {
   console.warn('[Connector] Global uncaughtException (handled):', err?.message || err);
 });
 
-process.on('unhandledRejection', (reason) => {
-  console.warn('[Connector] Global unhandledRejection (handled):', reason);
+process.on('unhandledRejection', (reason: any) => {
+  const msg = reason?.message || String(reason || '');
+  if (msg.includes('subarray') || msg.includes('TIMEOUT') || msg.includes('ZKError')) {
+    // Non-fatal ZK socket timeout/reset warning
+    return;
+  }
+  console.warn('[Connector] Global unhandledRejection:', msg);
 });
 
 httpServer.listen(PORT, () => {
