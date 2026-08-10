@@ -1,6 +1,10 @@
 packages:
-  - 'apps/*'
+  - 'apps/web'
+  - 'apps/connector'
   - 'packages/*'
+  # Desktop (Electron) is excluded from the workspace to prevent electron-builder/app-builder-bin
+  # from being auto-installed during `npm run dev` (causes Node heap OOM crash).
+  # To build the desktop app: pnpm --filter @hrms/desktop build:exe
 allowBuilds:
   msw: true
   sharp: true

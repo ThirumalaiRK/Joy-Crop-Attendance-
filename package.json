@@ -3,7 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "pnpm -r dev",
-    "build": "pnpm -r build",
+    "dev:web": "pnpm --filter @hrms/web dev",
+    "dev:connector": "pnpm --filter @hrms/connector dev",
+    "build": "pnpm --filter !@hrms/desktop -r build",
     "test": "pnpm -r test",
     "desktop:dev": "electron apps/desktop",
     "desktop:build": "pnpm --filter @hrms/desktop build:exe",
@@ -15,3 +17,4 @@
     "typescript": "^5.7.3"
   }
 }
+
