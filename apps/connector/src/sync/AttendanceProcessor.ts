@@ -54,6 +54,22 @@ export class AttendanceProcessor {
 
     console.log(`\n⚙️ [AttendanceProcessor] Processing raw punch for User ID "${rawUserIdStr}" at ${timeStrIST} (${raw.device_ip})`);
 
+    // ─── GUARD 1: Reject unenrolled "finger 0" / user ID 0 ────────────────────
+    if (rawUserIdStr === '0' || rawUserIdStr === '' || rawUserIdStr === 'NaN') {
+      console.warn(`🚫 [AttendanceProcessor] Rejected punch from unenrolled finger (User ID "${rawUserIdStr}"). This is a ZKTeco dummy record — place a valid enrolled finger.`);
+      return { status: 'REJECTED', reason: 'UNENROLLED_FINGER_0' };
+    }
+
+    // ─── GUARD 2: Reject timestamps > 24 hours in the future ─────────────────
+    // This catches the ZKTeco device clock bug where the device date is set wrong (e.g. year 2041)
+    const nowMs = Date.now();
+    const punchMs = punchTime.getTime();
+    if (punchMs > nowMs + 24 * 60 * 60 * 1000) {
+      console.warn(`🚫 [AttendanceProcessor] Rejected punch with FUTURE timestamp: ${punchTime.toISOString()} (device clock may be wrong). Please correct the ZKTeco device date/time.`);
+      return { status: 'REJECTED', reason: 'FUTURE_TIMESTAMP', deviceTime: punchTime.toISOString(), hostTime: new Date().toISOString() };
+    }
+
+
     // STEP 1: Always store raw event into attendance_events (Immutable Audit Trail)
     const rawEvtId = `EVT-RAW-${rawUserIdStr}-${Date.now()}`;
     try {
