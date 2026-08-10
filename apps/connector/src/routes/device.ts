@@ -444,4 +444,259 @@ router.post('/get-info', async (req, res) => {
   }
 });
 
+router.post('/diagnostics', async (req, res) => {
+  const { ip } = req.body;
+  const targetIp = ip || '192.168.1.56';
+  const device = deviceManager.getDevice(targetIp);
+  if (!device) return res.status(400).json({ error: 'Device offline' });
+
+  try {
+    const rawSdk = (device as any).device;
+    const diagnosticsData: any = {
+      timestamp: new Date().toISOString(),
+      ip: targetIp,
+      port: 4370,
+      standardInfo: {},
+      parameters: {},
+      rawInfo: null,
+    };
+
+    // Safe read-only calls on internal SDK instance
+    try {
+      diagnosticsData.standardInfo.serialNumber = typeof rawSdk.getSerialNumber === 'function' ? await rawSdk.getSerialNumber() : null;
+    } catch (_) {}
+
+    try {
+      diagnosticsData.standardInfo.firmwareVersion = typeof rawSdk.getVersion === 'function' ? await rawSdk.getVersion() : null;
+    } catch (_) {}
+
+    try {
+      diagnosticsData.standardInfo.deviceName = typeof rawSdk.getDeviceName === 'function' ? await rawSdk.getDeviceName() : null;
+    } catch (_) {}
+
+    try {
+      diagnosticsData.standardInfo.platform = typeof rawSdk.getPlatform === 'function' ? await rawSdk.getPlatform() : null;
+    } catch (_) {}
+
+    try {
+      diagnosticsData.standardInfo.os = typeof rawSdk.getOS === 'function' ? await rawSdk.getOS() : null;
+    } catch (_) {}
+
+    try {
+      diagnosticsData.standardInfo.ssr = typeof rawSdk.getSSR === 'function' ? await rawSdk.getSSR() : null;
+    } catch (_) {}
+
+    try {
+      diagnosticsData.standardInfo.time = typeof rawSdk.getTime === 'function' ? await rawSdk.getTime() : null;
+    } catch (_) {}
+
+    try {
+      diagnosticsData.standardInfo.pin = typeof rawSdk.getPIN === 'function' ? await rawSdk.getPIN() : null;
+    } catch (_) {}
+
+    try {
+      diagnosticsData.rawInfo = typeof rawSdk.getInfo === 'function' ? await rawSdk.getInfo() : null;
+    } catch (_) {}
+
+    // Read-only Parameter registers (CMD_OPTIONS_RRQ = 11)
+    const paramList = [
+      '~Platform',
+      '~OS',
+      '~ZKFPVersion',
+      '~OEMVendor',
+      '~DeviceName',
+      '~SerialNumber',
+      '~FirmwareVersion',
+      '~MAC',
+      '~Language',
+      '~IsSupportSSR',
+      '~SSR',
+      '~LCD',
+      '~AdPic',
+      '~Pic',
+      '~Wallpaper',
+      '~Theme',
+      '~ScreenSave',
+      '~ScreenSaveTime',
+      '~Voice',
+      '~Volume',
+      '~Capture',
+      '~OptionSSR',
+      '~FreeSizes',
+      '~MaxUserCount',
+      '~MaxAttLogCount',
+      '~MaxFingerCount',
+      '~FaceFunOn',
+      '~IsSupportUserPic',
+      '~PhotoFunOn',
+      'Platform',
+      'FirmwareVersion',
+      'DeviceName',
+      'SerialNumber',
+      'Wallpaper',
+      'Theme',
+      'AdPic',
+      'LCD',
+    ];
+
+    for (const p of paramList) {
+      try {
+        if (typeof rawSdk.executeCmd === 'function') {
+          const resCmd = await rawSdk.executeCmd(11, p);
+          if (resCmd) {
+            diagnosticsData.parameters[p] = typeof resCmd === 'string' ? resCmd : (Buffer.isBuffer(resCmd) ? resCmd.toString('ascii').replace(/\0/g, '') : resCmd);
+          }
+        }
+      } catch (_) {}
+    }
+
+    res.json({
+      status: 'success',
+      data: diagnosticsData,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/read-file-test', async (req, res) => {
+  const { ip, filenames } = req.body;
+  const targetIp = ip || '192.168.1.56';
+  const device = deviceManager.getDevice(targetIp);
+  if (!device) return res.status(400).json({ error: 'Device offline' });
+
+  try {
+    const rawSdk = (device as any).device;
+    const testFiles = filenames || [
+      'theme/theme1.jpg',
+      'theme/bg.jpg',
+      'theme/wallpaper.jpg',
+      'theme/theme1.bmp',
+      'theme/bg.bmp',
+      'photo/wallpaper.jpg',
+      'photo/ad_1.jpg',
+      'photo/ad_2.jpg',
+      'wallpaper.jpg',
+      'wallpaper.bmp',
+      'bg.bmp',
+      'logo.bmp',
+      'options.cfg',
+    ];
+
+    const results: any = {};
+
+    for (const filename of testFiles) {
+      try {
+        const CMD_READ_FILE = 3;
+        const resp = await rawSdk.executeCmd(CMD_READ_FILE, filename);
+        if (resp) {
+          const buf = Buffer.isBuffer(resp) ? resp : Buffer.from(String(resp), 'ascii');
+          const hex = buf.toString('hex');
+          const ascii = buf.toString('ascii').replace(/[^\x20-\x7E]/g, '.');
+          let reportedSize = null;
+          if (buf.length >= 4) {
+            reportedSize = buf.readUInt32LE(0);
+          }
+          results[filename] = {
+            rawHex: hex,
+            rawAscii: ascii,
+            byteLength: buf.length,
+            reportedSize,
+          };
+        } else {
+          results[filename] = { found: false, note: 'Null response' };
+        }
+      } catch (err: any) {
+        results[filename] = { found: false, error: err.message };
+      }
+    }
+
+    res.json({
+      status: 'success',
+      results,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/upload-wallpaper', async (req, res) => {
+  const { ip, filePath } = req.body;
+  const targetIp = ip || '192.168.1.56';
+  const targetFilePath = filePath || 'f:\\TEST LIVE ATTENDANCE\\wallpaper\\1.jpg';
+
+  const device = deviceManager.getDevice(targetIp);
+  if (!device) return res.status(400).json({ error: 'Device offline' });
+
+  try {
+    const fs = require('fs');
+    if (!fs.existsSync(targetFilePath)) {
+      return res.status(404).json({ error: `File not found: ${targetFilePath}` });
+    }
+
+    const fileBuf = fs.readFileSync(targetFilePath);
+    const rawSdk = (device as any).device;
+    const uploadLog: string[] = [];
+
+    uploadLog.push(`Loaded image file: ${targetFilePath} (${fileBuf.length} bytes, 320x240 px)`);
+
+    // Potential target filenames accepted by ZKTeco TFT Linux SSR devices
+    const targetNames = [
+      'wallpaper.jpg',
+      'theme/wallpaper.jpg',
+      'theme/bg.jpg',
+      'photo/wallpaper.jpg',
+      'ad_1.jpg',
+      'photo/ad_1.jpg',
+      'theme1.jpg',
+      'bg.bmp',
+      'logo.bmp',
+    ];
+
+    let anySucceeded = false;
+
+    for (const name of targetNames) {
+      try {
+        uploadLog.push(`Testing upload as "${name}"...`);
+        const nameBuf = Buffer.from(name + '\0', 'ascii');
+        const reqPayload = Buffer.alloc(nameBuf.length + 4);
+        nameBuf.copy(reqPayload, 0);
+        reqPayload.writeUInt32LE(fileBuf.length, nameBuf.length);
+
+        const CMD_WRITE_FILE = 4;
+        const resp = await rawSdk.executeCmd(CMD_WRITE_FILE, reqPayload);
+        const respCode = resp ? (Buffer.isBuffer(resp) ? resp.readUInt16LE(0) : resp) : null;
+        uploadLog.push(`  CMD_WRITE_FILE response for "${name}": ${respCode}`);
+
+        // If accepted or buffer prepared, stream file data
+        try {
+          const CMD_DATA = 1503;
+          await rawSdk.executeCmd(CMD_DATA, fileBuf);
+          uploadLog.push(`  Sent file data payload (${fileBuf.length} bytes)`);
+          anySucceeded = true;
+        } catch (e: any) {
+          uploadLog.push(`  Data stream error for "${name}": ${e.message}`);
+        }
+      } catch (err: any) {
+        uploadLog.push(`  Error for "${name}": ${err.message}`);
+      }
+    }
+
+    // Refresh display
+    try {
+      await rawSdk.executeCmd(1013, ''); // CMD_REFRESHDATA
+      await rawSdk.executeCmd(1014, ''); // CMD_REFRESHOPTION
+      uploadLog.push('Sent CMD_REFRESHDATA (1013) & CMD_REFRESHOPTION (1014) to refresh LCD');
+    } catch (_) {}
+
+    res.json({
+      status: 'success',
+      message: 'Wallpaper upload and refresh commands executed',
+      uploadLog,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

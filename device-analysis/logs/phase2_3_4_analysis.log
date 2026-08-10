@@ -1,0 +1,10 @@
+[2026-08-10T09:30:25.120Z] 
+======================================================
+[2026-08-10T09:30:25.122Z] 🔍 STARTING PHASE 2, 3, 4: PURE TCP READ-ONLY DEVICE & PROTOCOL ANALYSIS
+[2026-08-10T09:30:25.122Z]    Target: 192.168.1.56:4370
+[2026-08-10T09:30:25.123Z] ======================================================
+
+[2026-08-10T09:30:25.130Z] [TCP] Connected to 192.168.1.56:4370
+[2026-08-10T09:30:25.153Z] [TCP Connect Handshake] Response CMD=2005 (2000=SUCCESS), SessionId=59274
+[2026-08-10T09:30:25.153Z] ❌ Failed to establish ZKTeco TCP session.
+[2026-08-10T09:30:30.162Z] [TCP Timeout]

@@ -1,0 +1,62 @@
+{
+  "status": "success",
+  "data": {
+    "timestamp": "2026-08-10T09:32:50.234Z",
+    "ip": "192.168.1.56",
+    "port": 4370,
+    "standardInfo": {
+      "serialNumber": null,
+      "firmwareVersion": null,
+      "deviceName": null,
+      "platform": null,
+      "os": null,
+      "ssr": null,
+      "time": null,
+      "pin": null
+    },
+    "parameters": {
+      "~Platform": "P\u0007w\u001fyg\u0003~Platform=ZLM60_TFT",
+      "~OS": "P\u0007/\u0003yg\u0004~OS=1",
+      "~ZKFPVersion": "P\u0007a\u001dyg\u0005~ZKFPVersion=10",
+      "~OEMVendor": "P\u0007{\u0006yg\u0006~OEMVendor=0",
+      "~DeviceName": "P\u0007[oyg\u0007~DeviceName=x 2008",
+      "~SerialNumber": "P\u0007\u0011*yg\b~SerialNumber=CGKK223862906",
+      "~FirmwareVersion": "\u0007\u0013v\u0004yg\t",
+      "~MAC": "\u0007\u0013u\u0004yg\n",
+      "~Language": "\u0007\u0013t\u0004yg\u000b",
+      "~IsSupportSSR": "\u0007\u0013s\u0004yg\f",
+      "~SSR": "P\u0007\u001a9yg\r~SSR=1",
+      "~LCD": "\u0007\u0013q\u0004yg\u000e",
+      "~AdPic": "\u0007\u0013p\u0004yg\u000f",
+      "~Pic": "\u0007\u0013o\u0004yg\u0010",
+      "~Wallpaper": "\u0007\u0013n\u0004yg\u0011",
+      "~Theme": "\u0007\u0013m\u0004yg\u0012",
+      "~ScreenSave": "\u0007\u0013l\u0004yg\u0013",
+      "~ScreenSaveTime": "\u0007\u0013k\u0004yg\u0014",
+      "~Voice": "\u0007\u0013j\u0004yg\u0015",
+      "~Volume": "\u0007\u0013i\u0004yg\u0016",
+      "~Capture": "\u0007\u0013h\u0004yg\u0017",
+      "~OptionSSR": "\u0007\u0013g\u0004yg\u0018",
+      "~FreeSizes": "\u0007\u0013f\u0004yg\u0019",
+      "~MaxUserCount": "P\u0007\u001cIyg\u001a~MaxUserCount=8",
+      "~MaxAttLogCount": "P\u00071\u0006yg\u001b~MaxAttLogCount=8",
+      "~MaxFingerCount": "P\u0007:kyg\u001c~MaxFingerCount=8",
+      "~FaceFunOn": "\u0007\u0013b\u0004yg\u001d",
+      "~IsSupportUserPic": "\u0007\u0013a\u0004yg\u001e",
+      "~PhotoFunOn": "\u0007\u0013`\u0004yg\u001f",
+      "Platform": "\u0007\u0013_\u0004yg ",
+      "FirmwareVersion": "\u0007\u0013^\u0004yg!",
+      "DeviceName": "\u0007\u0013]\u0004yg\"",
+      "SerialNumber": "\u0007\u0013\\\u0004yg#",
+      "Wallpaper": "\u0007\u0013[\u0004yg$",
+      "Theme": "\u0007\u0013Z\u0004yg%",
+      "AdPic": "\u0007\u0013Y\u0004yg&",
+      "LCD": "\u0007\u0013X\u0004yg'"
+    },
+    "rawInfo": {
+      "userCounts": 5,
+      "logCounts": 0,
+      "logCapacity": 80000
+    }
+  }
+}

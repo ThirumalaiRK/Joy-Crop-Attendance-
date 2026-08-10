@@ -1,0 +1,83 @@
+{
+  "status": "success",
+  "results": {
+    "theme/theme1.jpg": {
+      "rawHex": "ffff971764e80400",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395837439
+    },
+    "theme/bg.jpg": {
+      "rawHex": "ffff961764e80500",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395771903
+    },
+    "theme/wallpaper.jpg": {
+      "rawHex": "ffff951764e80600",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395706367
+    },
+    "theme/theme1.bmp": {
+      "rawHex": "ffff941764e80700",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395640831
+    },
+    "theme/bg.bmp": {
+      "rawHex": "ffff931764e80800",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395575295
+    },
+    "photo/wallpaper.jpg": {
+      "rawHex": "ffff921764e80900",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395509759
+    },
+    "photo/ad_1.jpg": {
+      "rawHex": "ffff911764e80a00",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395444223
+    },
+    "photo/ad_2.jpg": {
+      "rawHex": "ffff901764e80b00",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395378687
+    },
+    "wallpaper.jpg": {
+      "rawHex": "ffff8f1764e80c00",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395313151
+    },
+    "wallpaper.bmp": {
+      "rawHex": "ffff8e1764e80d00",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395247615
+    },
+    "bg.bmp": {
+      "rawHex": "ffff8d1764e80e00",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395182079
+    },
+    "logo.bmp": {
+      "rawHex": "ffff8c1764e80f00",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395116543
+    },
+    "options.cfg": {
+      "rawHex": "ffff8b1764e81000",
+      "rawAscii": "....dh..",
+      "byteLength": 8,
+      "reportedSize": 395051007
+    }
+  }
+}

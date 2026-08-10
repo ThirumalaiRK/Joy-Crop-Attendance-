@@ -1,0 +1,30 @@
+[2026-08-10T09:27:47.858Z] === PHASE 1: SAFE NETWORK DISCOVERY START ===
+[2026-08-10T09:27:47.861Z] Pinging 192.168.1.56...
+[2026-08-10T09:27:49.931Z] Ping Response:
+
+Pinging 192.168.1.56 with 32 bytes of data:
+Reply from 192.168.1.56: bytes=32 time=2ms TTL=64
+Reply from 192.168.1.56: bytes=32 time=1ms TTL=64
+Reply from 192.168.1.56: bytes=32 time=2ms TTL=64
+
+Ping statistics for 192.168.1.56:
+    Packets: Sent = 3, Received = 3, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 1ms, Maximum = 2ms, Average = 1ms
+
+[2026-08-10T09:27:49.932Z] Scanning read-only TCP ports on 192.168.1.56...
+[2026-08-10T09:27:51.446Z] Port 21: TIMEOUT
+[2026-08-10T09:27:52.956Z] Port 22: TIMEOUT
+[2026-08-10T09:27:52.961Z] Port 23: OPEN
+[2026-08-10T09:27:54.464Z] Port 80: TIMEOUT
+[2026-08-10T09:27:55.965Z] Port 443: TIMEOUT
+[2026-08-10T09:27:56.044Z] Port 4370: OPEN
+[2026-08-10T09:27:57.554Z] Port 4371: TIMEOUT
+[2026-08-10T09:27:59.066Z] Port 5005: TIMEOUT
+[2026-08-10T09:28:00.572Z] Port 7788: TIMEOUT
+[2026-08-10T09:28:02.086Z] Port 8080: TIMEOUT
+[2026-08-10T09:28:03.601Z] Port 8088: TIMEOUT
+[2026-08-10T09:28:05.114Z] Port 9922: TIMEOUT
+[2026-08-10T09:28:05.115Z] Network discovery complete. Open ports: [23,4370]
+[2026-08-10T09:28:05.116Z] === PHASE 1 COMPLETE ===
+

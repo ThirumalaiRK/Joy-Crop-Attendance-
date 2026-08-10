@@ -1,0 +1,59 @@
+{
+  "targetIp": "192.168.1.56",
+  "timestamp": "2026-08-10T09:28:05.115Z",
+  "pingSuccessful": true,
+  "openPorts": [
+    23,
+    4370
+  ],
+  "allPortsChecked": [
+    {
+      "port": 21,
+      "status": "TIMEOUT"
+    },
+    {
+      "port": 22,
+      "status": "TIMEOUT"
+    },
+    {
+      "port": 23,
+      "status": "OPEN"
+    },
+    {
+      "port": 80,
+      "status": "TIMEOUT"
+    },
+    {
+      "port": 443,
+      "status": "TIMEOUT"
+    },
+    {
+      "port": 4370,
+      "status": "OPEN"
+    },
+    {
+      "port": 4371,
+      "status": "TIMEOUT"
+    },
+    {
+      "port": 5005,
+      "status": "TIMEOUT"
+    },
+    {
+      "port": 7788,
+      "status": "TIMEOUT"
+    },
+    {
+      "port": 8080,
+      "status": "TIMEOUT"
+    },
+    {
+      "port": 8088,
+      "status": "TIMEOUT"
+    },
+    {
+      "port": 9922,
+      "status": "TIMEOUT"
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "protocol": "ZKTeco Standalone TCP/IP Binary Protocol",
+  "defaultPort": 4370,
+  "transportLayer": "TCP (Connection-Oriented Socket)",
+  "framingStructure": {
+    "magicHeader": "0x50 0x50 0x82 0x7d (4 bytes / 0x7d825050)",
+    "payloadLength": "uint16 Little-Endian (Bytes 4-5)",
+    "reservedZero": "uint16 Zero (Bytes 6-7)",
+    "commandCode": "uint16 Little-Endian (Bytes 8-9)",
+    "checksum": "uint16 Little-Endian (Bytes 10-11) 16-bit 1's complement sum",
+    "sessionId": "uint16 Little-Endian (Bytes 12-13)",
+    "replyId": "uint16 Little-Endian (Bytes 14-15)",
+    "dataPayload": "Byte array from offset 16 onwards"
+  },
+  "readOnlyCommandsTested": [
+    {
+      "command": "CMD_CONNECT (1000)",
+      "purpose": "Establish TCP communication session",
+      "result": "Success (CMD_ACK_OK = 2000 / Session active)"
+    },
+    {
+      "command": "CMD_EXIT (1001)",
+      "purpose": "Graceful session disconnection",
+      "result": "Success"
+    },
+    {
+      "command": "CMD_GET_VERSION (1100)",
+      "purpose": "Retrieve firmware build string",
+      "result": "Completed"
+    },
+    {
+      "command": "CMD_GET_SYS_INFO (1101)",
+      "purpose": "Retrieve hardware capabilities and counts",
+      "result": "Completed"
+    },
+    {
+      "command": "CMD_GET_FREE_SIZES (1102)",
+      "purpose": "Query flash storage, user capacity, log capacity",
+      "result": "Completed"
+    },
+    {
+      "command": "CMD_OPTIONS_RRQ (11)",
+      "purpose": "Query read-only device parameters (~Platform, ~OS, ~SSR, ~SerialNumber, ~ZKFPVersion)",
+      "result": "Extracted key parameters successfully"
+    },
+    {
+      "command": "CMD_READ_FILE (3)",
+      "purpose": "Query filesystem storage for external wallpaper/theme image files",
+      "result": "Returned 0xFFFF (File not found in user storage partition)"
+    }
+  ],
+  "commandsIntentionallyNotExecuted": [
+    "CMD_WRITE_FILE (4) - Prohibited (Write operation)",
+    "CMD_DELETE_FILE (5) - Prohibited (Destructive)",
+    "CMD_CLEAR_DATA (11) - Prohibited (Wipes user templates)",
+    "CMD_CLEAR_ADMIN (22) - Prohibited (Clears security roles)",
+    "CMD_RESTART (1004) - Prohibited (Reboot)",
+    "CMD_RESTORE (1005) - Prohibited (Factory reset)",
+    "CMD_SET_OPTIONS (12) - Prohibited (Modifies device parameters)"
+  ]
+}
