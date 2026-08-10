@@ -13,35 +13,76 @@ interface AuditEntry {
   ip: string;
   company: string;
   severity: 'info' | 'warning' | 'critical';
+  timestamp: number;
 }
 
 function deriveAuditLogs(attRecords: any[], empRecords: any[]): AuditEntry[] {
-  const logs: AuditEntry[] = [];
-  attRecords.slice(0, 20).forEach((r) => {
-    logs.push({
-      id: `att-${r.id}`,
-      actor: r.employee_name || 'Unknown',
-      action: r.check_out_time ? 'Check Out' : 'Check In',
-      target: `attendance_records/${r.id}`,
-      time: r.check_in_time || '—',
-      ip: '192.168.1.59',
-      company: 'COMP-001',
-      severity: 'info',
-    });
-  });
-  empRecords.slice(0, 5).forEach((e) => {
-    logs.push({
-      id: `emp-${e.id}`,
+  const logsMap = new Map<string, AuditEntry>();
+
+  // 1. Process Employee Creation & Enrollment Events
+  empRecords.forEach((e) => {
+    if (!e.name || e.name.toLowerCase().includes('employee 0')) return;
+    const createdAtMs = e.created_at ? new Date(e.created_at).getTime() : 0;
+    const timeStr = e.created_at
+      ? new Date(e.created_at).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+      : '—';
+
+    const id = `emp-create-${e.id}`;
+    logsMap.set(id, {
+      id,
       actor: 'Super Admin',
-      action: 'Employee Created',
+      action: 'Employee Created & Enrolled',
       target: `employees/${e.id}`,
-      time: e.created_at ? new Date(e.created_at).toLocaleTimeString() : '—',
+      time: timeStr,
       ip: '192.168.1.59',
       company: 'COMP-001',
       severity: 'info',
+      timestamp: createdAtMs,
     });
   });
-  return logs.sort(() => Math.random() - 0.5).slice(0, 25);
+
+  // 2. Process Attendance Records (Check-In & Check-Out)
+  attRecords.forEach((r) => {
+    if (!r.employee_name || r.employee_name.toLowerCase().includes('employee 0')) return;
+
+    // Check-In Log Entry
+    if (r.check_in_time && r.check_in_time !== '—' && r.check_in_time !== '-') {
+      const id = `att-in-${r.id}`;
+      const recMs = r.created_at ? new Date(r.created_at).getTime() : 0;
+      logsMap.set(id, {
+        id,
+        actor: r.employee_name,
+        action: 'Check In',
+        target: `attendance_records/${r.id}`,
+        time: r.check_in_time,
+        ip: '192.168.1.59',
+        company: 'COMP-001',
+        severity: 'info',
+        timestamp: recMs,
+      });
+    }
+
+    // Check-Out Log Entry
+    if (r.check_out_time && r.check_out_time !== '—' && r.check_out_time !== '-') {
+      const id = `att-out-${r.id}`;
+      const recMs = r.created_at ? new Date(r.created_at).getTime() + 1000 : 0;
+      logsMap.set(id, {
+        id,
+        actor: r.employee_name,
+        action: 'Check Out',
+        target: `attendance_records/${r.id}`,
+        time: r.check_out_time,
+        ip: '192.168.1.59',
+        company: 'COMP-001',
+        severity: 'info',
+        timestamp: recMs,
+      });
+    }
+  });
+
+  // Sort strictly by timestamp descending (newest first), NO random shuffling!
+  return Array.from(logsMap.values())
+    .sort((a, b) => b.timestamp - a.timestamp);
 }
 
 export function AuditLogs() {
