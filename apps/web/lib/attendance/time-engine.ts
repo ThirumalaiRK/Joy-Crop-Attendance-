@@ -699,6 +699,10 @@ export function fetchAllAttendanceSummaries(targetDate?: string): AttendanceSumm
     const evtDate = evt.eventTime
       ? new Date(evt.eventTime).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
       : '';
+    if (filterDate.length === 7) {
+      // Monthly scope e.g. "2026-08"
+      return evtDate.startsWith(filterDate) || ((evt as any).date && (evt as any).date.startsWith(filterDate));
+    }
     return evtDate === filterDate || (evt as any).date === filterDate;
   });
 

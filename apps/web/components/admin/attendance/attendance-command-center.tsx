@@ -162,8 +162,10 @@ export function AttendanceCommandCenter() {
       targetDateParam = TODAY_STR;  // IST date e.g. '2026-08-10'
     } else if (dateScope === 'custom_date' && selectedDate) {
       targetDateParam = selectedDate;
+    } else if (dateScope === 'month' && selectedDate) {
+      targetDateParam = selectedDate.slice(0, 7);  // '2026-08'
     } else {
-      targetDateParam = 'ALL';  // month and all-history both show everything
+      targetDateParam = 'ALL';  // all-history shows everything
     }
     const sums = fetchAllAttendanceSummaries(targetDateParam);
     setSummaries(sums);
@@ -339,7 +341,7 @@ export function AttendanceCommandCenter() {
           { label: 'On Break', value: engineStats.onBreak, color: 'text-blue-400', border: 'border-blue-500/30' },
           { label: 'In Meeting', value: engineStats.inMeeting, color: 'text-purple-400', border: 'border-purple-500/30' },
           { label: 'Field Visit', value: engineStats.onField, color: 'text-cyan-400', border: 'border-cyan-500/30' },
-          { label: 'Late Today', value: engineStats.lateToday, color: 'text-rose-400', border: 'border-rose-500/30' },
+          { label: dateScope === 'today' ? 'Late Today' : 'Late (In Scope)', value: engineStats.lateToday, color: 'text-rose-400', border: 'border-rose-500/30' },
           { label: 'Checked Out', value: engineStats.checkedOut, color: 'text-slate-400', border: 'border-slate-700' },
         ].map((stat) => (
           <div key={stat.label} className={`p-4 rounded-2xl bg-slate-900/90 border shadow-lg flex flex-col justify-between ${stat.border}`}>
