@@ -3,40 +3,26 @@
 import React, { useEffect, useState } from 'react';
 import {
   GitBranch, MapPin, Clock, Users, MonitorSmartphone, Plus, Edit2, Trash2,
-  RefreshCw, Radio, UserPlus, Cpu, Check, X, Shield, Settings2, Globe
+  RefreshCw, Radio, UserPlus, Cpu, Check, X, Shield, Settings2, Globe, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import { Branch, BranchService } from '../../../lib/services/branch-service';
+import { Company, CompanyService } from '../../../lib/services/company-service';
 import { clsx } from 'clsx';
 import { Employee } from '../../../types';
-
-export interface Branch {
-  id: string;
-  company_id?: string;
-  name: string;
-  location: string;
-  timezone: string;
-  shift: string;
-  status: 'active' | 'setup' | 'inactive';
-  employee_count?: number;
-  device_count?: number;
-  created_at?: string;
-}
-
-const DEFAULT_BRANCHES: Branch[] = [
-  { id: 'BR-001', company_id: 'COMP-001', name: 'Global HQ — Floor 4 & 5', location: 'Chennai, Tamil Nadu', timezone: 'IST (UTC+5:30)', shift: '09:00 AM - 06:00 PM', status: 'active', employee_count: 2, device_count: 1 },
-  { id: 'BR-002', company_id: 'COMP-001', name: 'Factory Unit A', location: 'Ambattur, Chennai', timezone: 'IST (UTC+5:30)', shift: '06:00 AM - 02:00 PM', status: 'setup', employee_count: 0, device_count: 0 },
-  { id: 'BR-003', company_id: 'COMP-001', name: 'Warehouse North', location: 'Thiruvallur, Tamil Nadu', timezone: 'IST (UTC+5:30)', shift: '08:00 AM - 05:00 PM', status: 'setup', employee_count: 0, device_count: 0 },
-];
 
 export function BranchManagement() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+  const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'RECONNECTING' | 'OFFLINE'>('CONNECTED');
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
 
@@ -44,6 +30,7 @@ export function BranchManagement() {
   const [formBranch, setFormBranch] = useState<Partial<Branch>>({
     name: '',
     location: '',
+    company_id: 'COMP-001',
     timezone: 'IST (UTC+5:30)',
     shift: '09:00 AM - 06:00 PM',
     status: 'active',
@@ -53,39 +40,30 @@ export function BranchManagement() {
   const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage({ text, type });
+    setTimeout(() => setToastMessage(null), 4000);
+  };
 
   // ─── Fetch Branches & Related Data ──────────────────────────────
   const loadBranches = async () => {
     setLoading(true);
     try {
-      const [branchRes, empRes, devRes] = await Promise.all([
-        supabase.from('branches').select('*').order('created_at', { ascending: true }),
-        supabase.from('employees').select('*'),
-        supabase.from('biometric_devices').select('*'),
+      const [res, compList] = await Promise.all([
+        BranchService.getBranches('COMP-001'),
+        CompanyService.getCompanies(),
       ]);
 
-      const fetchedBranches: Branch[] = branchRes.data && branchRes.data.length > 0 ? branchRes.data : DEFAULT_BRANCHES;
-      const allEmps: any[] = empRes.data ?? [];
-      const allDevs: any[] = devRes.data ?? [];
-
-      setEmployees(allEmps as any);
-      setDevices(allDevs);
-
-      // Compute dynamic counts per branch
-      const enriched = fetchedBranches.map((b) => {
-        const empCount = allEmps.filter((e) => e.department?.toLowerCase().includes(b.name.toLowerCase()) || e.branch === b.name || (b.id === 'BR-001' && !e.branch)).length;
-        const devCount = allDevs.filter((d) => d.location?.toLowerCase().includes(b.name.toLowerCase()) || (b.id === 'BR-001' && !d.location)).length;
-        return {
-          ...b,
-          employee_count: b.employee_count ?? (empCount || (b.id === 'BR-001' ? allEmps.length || 2 : 0)),
-          device_count: b.device_count ?? (devCount || (b.id === 'BR-001' ? 1 : 0)),
-        };
-      });
-
-      setBranches(enriched);
+      setBranches(res.branches);
+      setEmployees(res.employees as any);
+      setDevices(res.devices);
+      setCompanies(compList);
+      setRealtimeStatus('CONNECTED');
     } catch (e) {
       console.warn('Branch load exception:', e);
-      setBranches(DEFAULT_BRANCHES);
+      setRealtimeStatus('OFFLINE');
     } finally {
       setLoading(false);
     }
@@ -94,13 +72,21 @@ export function BranchManagement() {
   useEffect(() => {
     loadBranches();
 
-    // Supabase Realtime Subscription for Branches, Employees, Devices
+    // Supabase Realtime Subscription for Branches, Employees, Devices, Companies
     const channel = supabase
-      .channel('branch-management-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, () => loadBranches())
+      .channel('branch-management-realtime-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, () => {
+        setRealtimeStatus('CONNECTED');
+        loadBranches();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => loadBranches())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'biometric_devices' }, () => loadBranches())
-      .subscribe();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'companies' }, () => loadBranches())
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') setRealtimeStatus('CONNECTED');
+        else if (status === 'TIMED_OUT') setRealtimeStatus('RECONNECTING');
+        else if (status === 'CLOSED') setRealtimeStatus('OFFLINE');
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -110,94 +96,68 @@ export function BranchManagement() {
   // ─── CRUD Handlers ─────────────────────────────────────────────
 
   const handleCreateBranch = async () => {
-    if (!formBranch.name || !formBranch.location) return;
-    setIsSubmitting(true);
-    const newId = `BR-${String(branches.length + 1).padStart(3, '0')}`;
-    const newBranch: Branch = {
-      id: newId,
-      company_id: 'COMP-001',
-      name: formBranch.name,
-      location: formBranch.location,
-      timezone: formBranch.timezone || 'IST (UTC+5:30)',
-      shift: formBranch.shift || '09:00 AM - 06:00 PM',
-      status: (formBranch.status as any) || 'active',
-      employee_count: 0,
-      device_count: 0,
-    };
-
-    setBranches((prev) => [...prev, newBranch]);
-
-    // Strip non-DB fields before Supabase insert/upsert
-    const dbPayload = {
-      id: newBranch.id,
-      company_id: newBranch.company_id,
-      name: newBranch.name,
-      location: newBranch.location,
-      timezone: newBranch.timezone,
-      shift: newBranch.shift,
-      status: newBranch.status,
-    };
-
-    const { error } = await supabase.from('branches').upsert([dbPayload]);
-    if (error) {
-      console.error('Failed to create/upsert branch in Supabase:', error);
+    if (!formBranch.name || !formBranch.location) {
+      showToast('Please provide branch name and location', 'error');
+      return;
     }
 
-    setIsSubmitting(false);
-    setIsAddModalOpen(false);
-    setFormBranch({ name: '', location: '', timezone: 'IST (UTC+5:30)', shift: '09:00 AM - 06:00 PM', status: 'active' });
-    loadBranches();
+    setIsSubmitting(true);
+    try {
+      const created = await BranchService.createBranch(formBranch);
+      setBranches((prev) => [...prev, created]);
+      setIsAddModalOpen(false);
+      setFormBranch({ name: '', location: '', company_id: 'COMP-001', timezone: 'IST (UTC+5:30)', shift: '09:00 AM - 06:00 PM', status: 'active' });
+      showToast(`Branch "${created.name}" created successfully!`);
+      loadBranches();
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to create branch', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleUpdateBranch = async () => {
     if (!selectedBranch || !formBranch.name) return;
+
     setIsSubmitting(true);
-
-    const updated: Branch = {
-      ...selectedBranch,
-      name: formBranch.name,
-      location: formBranch.location || selectedBranch.location,
-      timezone: formBranch.timezone || selectedBranch.timezone,
-      shift: formBranch.shift || selectedBranch.shift,
-      status: (formBranch.status as any) || selectedBranch.status,
-    };
-
-    setBranches((prev) => prev.map((b) => (b.id === selectedBranch.id ? updated : b)));
-
-    // Strip non-DB fields before Supabase update/upsert
-    const dbPayload = {
-      id: updated.id,
-      company_id: updated.company_id || 'COMP-001',
-      name: updated.name,
-      location: updated.location,
-      timezone: updated.timezone,
-      shift: updated.shift,
-      status: updated.status,
-    };
-
-    const { error } = await supabase.from('branches').upsert([dbPayload]);
-    if (error) {
-      console.error('Failed to update branch in Supabase:', error);
+    try {
+      await BranchService.updateBranch(selectedBranch.id, formBranch);
+      setIsEditModalOpen(false);
+      showToast(`Branch "${formBranch.name}" updated successfully!`);
+      loadBranches();
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to update branch', 'error');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsSubmitting(false);
-    setIsEditModalOpen(false);
-    loadBranches();
   };
 
-  const handleDeleteBranch = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this branch?')) return;
-    setBranches((prev) => prev.filter((b) => b.id !== id));
-    await supabase.from('branches').delete().eq('id', id);
+  const handleDeleteBranch = async () => {
+    if (!selectedBranch) return;
+
+    setIsSubmitting(true);
+    try {
+      const result = await BranchService.deleteBranch(selectedBranch.id, selectedBranch.name);
+      if (!result.success) {
+        showToast(result.message, 'error');
+      } else {
+        setIsDeleteModalOpen(false);
+        showToast(result.message);
+        loadBranches();
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to delete branch', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // ─── Assign Staff & Hardware Handlers ───────────────────────────
 
   const openAssignModal = (branch: Branch) => {
     setSelectedBranch(branch);
-    // Find currently assigned employees & devices
-    const assignedEmps = employees.filter((e: any) => e.branch === branch.name || e.department?.includes(branch.name)).map((e) => e.id);
-    const assignedDevs = devices.filter((d) => d.location?.includes(branch.name)).map((d) => d.id);
+    const assignedEmps = employees.filter((e: any) => e.branch === branch.name || (e.department && e.department.includes(branch.name))).map((e) => e.id);
+    const assignedDevs = devices.filter((d) => d.location && d.location.includes(branch.name)).map((d) => d.id);
     setSelectedEmpIds(assignedEmps);
     setSelectedDeviceIds(assignedDevs);
     setIsAssignModalOpen(true);
@@ -206,24 +166,35 @@ export function BranchManagement() {
   const handleSaveAssignments = async () => {
     if (!selectedBranch) return;
     setIsSubmitting(true);
-
-    // Update selected employees with branch designation
-    for (const empId of selectedEmpIds) {
-      await supabase.from('employees').update({ branch: selectedBranch.name }).eq('id', empId);
+    try {
+      await BranchService.assignStaffAndDevices(selectedBranch.name, selectedEmpIds, selectedDeviceIds);
+      setIsAssignModalOpen(false);
+      showToast(`Successfully assigned staff & hardware to ${selectedBranch.name}!`);
+      loadBranches();
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to save assignments', 'error');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // Update selected devices with branch location
-    for (const devId of selectedDeviceIds) {
-      await supabase.from('biometric_devices').update({ location: selectedBranch.name }).eq('id', devId);
-    }
-
-    setIsSubmitting(false);
-    setIsAssignModalOpen(false);
-    loadBranches();
   };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div
+          className={clsx(
+            'fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-semibold flex items-center gap-2 animate-in slide-in-from-top-3',
+            toastMessage.type === 'success'
+              ? 'bg-emerald-950/90 border-emerald-500/30 text-emerald-300'
+              : 'bg-red-950/90 border-red-500/30 text-red-300'
+          )}
+        >
+          {toastMessage.type === 'success' ? <Check className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-red-400" />}
+          {toastMessage.text}
+        </div>
+      )}
+
       {/* Header Bar */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -234,16 +205,23 @@ export function BranchManagement() {
             Branch Management
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            {branches.length} active branch{branches.length !== 1 ? 'es' : ''} across COMP-001 (AgencyOS HQ)
+            {branches.length} active branch{branches.length !== 1 ? 'es' : ''} across platform
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           {/* Live WebSocket Status Pill */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-            <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
-              <Radio className="w-3 h-3" /> Realtime Sync Active
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800">
+            <span
+              className={clsx(
+                'w-2 h-2 rounded-full shrink-0',
+                realtimeStatus === 'CONNECTED' ? 'bg-emerald-400 animate-pulse' :
+                realtimeStatus === 'RECONNECTING' ? 'bg-amber-400 animate-ping' : 'bg-red-500'
+              )}
+            />
+            <span className="text-xs text-slate-300 font-semibold flex items-center gap-1">
+              <Radio className="w-3 h-3 text-blue-400" />
+              {realtimeStatus === 'CONNECTED' ? 'Realtime Sync Active' : realtimeStatus === 'RECONNECTING' ? 'Reconnecting...' : 'Offline'}
             </span>
           </div>
 
@@ -257,7 +235,7 @@ export function BranchManagement() {
 
           <button
             onClick={() => {
-              setFormBranch({ name: '', location: '', timezone: 'IST (UTC+5:30)', shift: '09:00 AM - 06:00 PM', status: 'active' });
+              setFormBranch({ name: '', location: '', company_id: companies[0]?.id || 'COMP-001', timezone: 'IST (UTC+5:30)', shift: '09:00 AM - 06:00 PM', status: 'active' });
               setIsAddModalOpen(true);
             }}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold transition shadow-lg hover:scale-[1.02] active:scale-[0.98]"
@@ -277,7 +255,7 @@ export function BranchManagement() {
           <div className="col-span-3 py-16 text-center border border-dashed border-slate-800 rounded-2xl">
             <GitBranch className="w-12 h-12 text-slate-600 mx-auto mb-3" />
             <p className="text-slate-400 text-sm font-semibold">No branches configured</p>
-            <p className="text-slate-600 text-xs mt-1">Click "Add Branch" above to create your first branch</p>
+            <p className="text-slate-600 text-xs mt-1">Click "+ Add Branch" above to create your first branch</p>
           </div>
         ) : (
           branches.map((b) => (
@@ -305,11 +283,10 @@ export function BranchManagement() {
                     {b.status}
                   </span>
 
-                  {/* Actions Dropdown / Quick Buttons */}
                   <button
                     onClick={() => {
                       setSelectedBranch(b);
-                      setFormBranch({ name: b.name, location: b.location, timezone: b.timezone, shift: b.shift, status: b.status });
+                      setFormBranch({ name: b.name, location: b.location, company_id: b.company_id || 'COMP-001', timezone: b.timezone, shift: b.shift, status: b.status });
                       setIsEditModalOpen(true);
                     }}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition border border-slate-700"
@@ -319,7 +296,10 @@ export function BranchManagement() {
                   </button>
 
                   <button
-                    onClick={() => handleDeleteBranch(b.id)}
+                    onClick={() => {
+                      setSelectedBranch(b);
+                      setIsDeleteModalOpen(true);
+                    }}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition border border-slate-700"
                     title="Delete Branch"
                   >
@@ -389,6 +369,21 @@ export function BranchManagement() {
             </div>
 
             <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Company</label>
+                <select
+                  value={formBranch.company_id}
+                  onChange={(e) => setFormBranch({ ...formBranch, company_id: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 focus:outline-none focus:border-violet-500"
+                >
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-slate-400 font-medium mb-1">Branch Name</label>
                 <input
@@ -524,6 +519,40 @@ export function BranchManagement() {
         </div>
       )}
 
+      {/* ─── DELETE BRANCH CONFIRMATION MODAL ─────────────────────── */}
+      {isDeleteModalOpen && selectedBranch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Delete Branch?</h3>
+                <p className="text-xs text-slate-400">{selectedBranch.name} ({selectedBranch.id})</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed bg-slate-800/60 p-3 rounded-xl border border-slate-700/60">
+              Checking active resources assigned to this branch before deletion.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button onClick={() => setIsDeleteModalOpen(false)} className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:bg-slate-800">
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteBranch}
+                disabled={isSubmitting}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold transition"
+              >
+                {isSubmitting ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── ASSIGN STAFF & DEVICES MODAL ─────────────────────────── */}
       {isAssignModalOpen && selectedBranch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
@@ -579,7 +608,7 @@ export function BranchManagement() {
               <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Select Biometric Scanners</span>
               <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin scrollbar-thumb-slate-800">
                 {devices.length === 0 ? (
-                  <p className="text-xs text-slate-500">Mantra MFS110 L1 (DEV-001) registered</p>
+                  <p className="text-xs text-slate-500">No biometric hardware devices registered yet</p>
                 ) : (
                   devices.map((dev) => {
                     const isAssigned = selectedDeviceIds.includes(dev.id);
@@ -598,7 +627,7 @@ export function BranchManagement() {
                       >
                         <div className="flex items-center gap-2">
                           <Cpu className="w-3.5 h-3.5 text-blue-400" />
-                          <span className="font-semibold text-slate-200">{dev.name}</span>
+                          <span className="font-semibold text-slate-200">{dev.device_name || dev.name || dev.model}</span>
                           <span className="text-[10px] text-slate-500">({dev.id})</span>
                         </div>
                         {isAssigned && <Check className="w-3.5 h-3.5 text-blue-400" />}
