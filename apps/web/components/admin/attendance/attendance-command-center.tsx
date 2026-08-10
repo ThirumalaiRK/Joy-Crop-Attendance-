@@ -807,17 +807,29 @@ export function AttendanceCommandCenter() {
                           {/* IMPORTANT: '—' (em dash) is truthy — only treat as checked-out if it's a real time string */}
                           {(() => {
                             const hasRealCheckOut = r.check_out_time && r.check_out_time !== '—' && r.check_out_time !== '-';
-                            const isLate = r.status === 'late';
+                            const isLateTime = (timeStr?: string): boolean => {
+                              if (!timeStr || timeStr === '—' || timeStr === '-') return false;
+                              const match = timeStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+                              if (!match) return false;
+                              let h = parseInt(match[1], 10);
+                              const m = parseInt(match[2], 10);
+                              const ampm = match[4].toUpperCase();
+                              if (ampm === 'PM' && h < 12) h += 12;
+                              if (ampm === 'AM' && h === 12) h = 0;
+                              return (h * 60 + m) > 545; // 09:05 AM IST
+                            };
+                            const isLate = (r.status || '').toLowerCase() === 'late' || isLateTime(r.check_in_time);
+                            const displayStatus = hasRealCheckOut ? 'CHECKED OUT' : isLate ? 'LATE' : 'PRESENT';
                             return (
                               <span className={clsx(
-                                'px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase',
+                                'px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase',
                                 hasRealCheckOut
                                   ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
                                   : isLate
                                   ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                                   : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                               )}>
-                                {hasRealCheckOut ? 'Checked Out' : r.status || 'present'}
+                                ● {displayStatus}
                               </span>
                             );
                           })()}
