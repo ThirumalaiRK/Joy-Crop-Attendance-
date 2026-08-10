@@ -29,6 +29,15 @@ import { AttendanceExportModal } from './attendance-export-modal';
 import { useDynamicTimeGreeting } from '../../../lib/time-greeting';
 import { eventBus } from '../../../lib/events/event-bus';
 
+function parseDateTimeString(dtStr?: string): { date: string; time: string } {
+  if (!dtStr || dtStr === '—' || dtStr === '-') return { date: '—', time: '' };
+  const parts = dtStr.split('•').map((s) => s.trim());
+  if (parts.length === 2) {
+    return { date: parts[0], time: parts[1] };
+  }
+  return { date: '', time: dtStr };
+}
+
 export function AttendanceCommandCenter() {
   const { salutation, icon, tagline } = useDynamicTimeGreeting('Joy Corporate Admin');
   // Use IST date - on Vercel (UTC server) toISOString().split('T')[0] returns the UTC date
@@ -409,154 +418,260 @@ export function AttendanceCommandCenter() {
         </button>
       </div>
 
-      {/* ── VIEW A: Time Engine Summaries ───────────────────────────────────── */}
+      {/* ── VIEW A: Time Engine Summaries (Enterprise Data Table) ────────── */}
       {activeView === 'engine' && (
-        <div className="rounded-3xl border border-slate-800 bg-slate-900/40 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
-            <span className="text-sm font-bold text-white">
-              Net Working Hours Summaries
-              <span className="text-[10px] font-mono text-slate-500 ml-2">Formula: Total - Tea Breaks - Lunch</span>
-            </span>
-            <div className="relative w-48">
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 shadow-xl overflow-hidden">
+          {/* Toolbar Header */}
+          <div className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h2 className="text-base font-bold text-white tracking-tight">Net Working Hours</h2>
+                <span className="px-2.5 py-0.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400">
+                  Net Working = Total Work Duration − Break Duration
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">Attendance Summary & Payroll Calculations</p>
+            </div>
+
+            <div className="relative w-64 max-w-[260px]">
               <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search employee..."
-                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:border-amber-500 focus:outline-none placeholder:text-slate-600"
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:border-emerald-500/50 focus:outline-none placeholder:text-slate-600 transition-colors"
               />
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+          {/* Desktop Data Table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-xs text-left border-collapse">
               <thead>
-                <tr className="border-b border-slate-800/40">
-                  {['Employee', 'Check In', 'Check Out', 'Tea Break', 'Lunch', 'Net Working Hours', 'Overtime', 'Late', 'Status', 'Timeline'].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                      {h}
-                    </th>
-                  ))}
+                <tr className="border-b border-slate-800/80 bg-slate-950/40 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 min-w-[180px] w-[20%]">EMPLOYEE</th>
+                  <th className="px-4 py-3 min-w-[120px]">CHECK IN</th>
+                  <th className="px-4 py-3 min-w-[120px]">CHECK OUT</th>
+                  <th className="px-4 py-3 min-w-[85px] text-center">TEA BREAK</th>
+                  <th className="px-4 py-3 min-w-[140px]">LUNCH</th>
+                  <th className="px-4 py-3 min-w-[115px] text-center">NET HOURS</th>
+                  <th className="px-4 py-3 min-w-[90px] text-center">OVERTIME</th>
+                  <th className="px-4 py-3 min-w-[105px] text-center">LATE</th>
+                  <th className="px-4 py-3 min-w-[110px] text-center">STATUS</th>
+                  <th className="px-4 py-3 min-w-[90px] text-center">TIMELINE</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-800/40">
                 {filteredSummaries.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-slate-600">
-                      No time engine summaries yet — waiting for biometric punch events.
+                    <td colSpan={10} className="px-4 py-12 text-center text-slate-500 font-medium">
+                      No time engine summaries found — waiting for biometric punch events.
                     </td>
                   </tr>
                 ) : (
-                  filteredSummaries.map((s) => (
-                    <tr key={s.id} className="border-b border-slate-800/20 hover:bg-slate-800/20 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-100">{s.employeeName}</span>
-                          <span className="text-[10px] text-slate-500">{s.department}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-mono">
-                        <span className="text-emerald-400 font-bold">{s.checkInTime || '—'}</span>
-                      </td>
-                      <td className="px-4 py-3 font-mono">
-                        <span className="text-purple-400 font-bold">{s.checkOutTime && s.checkOutTime !== '—' ? s.checkOutTime : '—'}</span>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-blue-300">
-                        {s.breakDurationMinutes > 0 ? (
-                          <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold text-[11px]">
-                            {s.breakDurationMinutes}m
-                          </span>
-                        ) : (
-                          <span className="text-slate-600">—</span>
-                        )}
-                      </td>
-                      {/* ── INTELLIGENT LUNCH BREAK DISPLAY ───────────────────── */}
-                      <td className="px-4 py-3">
-                        {s.lunchBreakMode === 'ACTUAL' ? (
-                          <div className="inline-flex flex-col">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold">
-                              <Utensils className="w-2.5 h-2.5" />
-                              <span>ACTUAL {s.lunchDurationMinutes}m</span>
-                            </span>
-                            <span className="text-[9px] text-slate-400 mt-0.5 font-mono">
-                              {s.lunchDetails?.replace(/^Actual \d+m\s*\(/, '').replace(/\)$/, '') || 'Punched Break'}
-                            </span>
+                  filteredSummaries.map((s) => {
+                    const checkIn = parseDateTimeString(s.checkInTime);
+                    const checkOut = parseDateTimeString(s.checkOutTime);
+
+                    return (
+                      <tr key={s.id} className="hover:bg-slate-800/30 transition-colors group">
+                        {/* Employee */}
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-2.5 max-w-[180px]">
+                            <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700/60 flex items-center justify-center text-[10px] font-bold text-slate-300 shrink-0">
+                              {s.employeeName.charAt(0)}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="font-semibold text-slate-100 text-xs truncate block" title={s.employeeName}>
+                                {s.employeeName}
+                              </span>
+                              <span className="text-[10px] text-slate-500 truncate block">
+                                {s.department || 'General'}
+                              </span>
+                            </div>
                           </div>
-                        ) : s.lunchBreakMode === 'AUTO' && s.lunchDurationMinutes > 0 ? (
-                          <div className="inline-flex flex-col">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
-                              <Clock className="w-2.5 h-2.5" />
-                              <span>AUTO {s.lunchDurationMinutes}m</span>
+                        </td>
+
+                        {/* Check In */}
+                        <td className="px-4 py-3.5 font-mono">
+                          {checkIn.time ? (
+                            <div>
+                              <span className="text-[10px] text-slate-400 block leading-tight">{checkIn.date}</span>
+                              <span className="text-emerald-400 font-bold text-xs block mt-0.5">{checkIn.time}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-600 font-sans text-xs">—</span>
+                          )}
+                        </td>
+
+                        {/* Check Out */}
+                        <td className="px-4 py-3.5 font-mono">
+                          {checkOut.time ? (
+                            <div>
+                              <span className="text-[10px] text-slate-400 block leading-tight">{checkOut.date}</span>
+                              <span className="text-purple-400 font-bold text-xs block mt-0.5">{checkOut.time}</span>
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="text-slate-600 font-sans text-xs block">—</span>
+                              <span className="text-[10px] text-slate-500 font-sans italic block">Working</span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Tea Break */}
+                        <td className="px-4 py-3.5 text-center font-mono">
+                          {s.breakDurationMinutes > 0 ? (
+                            <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold text-xs inline-block">
+                              {s.breakDurationMinutes}m
                             </span>
-                            <span className="text-[9px] text-amber-400/80 mt-0.5 font-mono">
-                              1:00 PM – 2:00 PM (Deducted)
+                          ) : (
+                            <span className="text-slate-600 font-sans text-xs">No break</span>
+                          )}
+                        </td>
+
+                        {/* Lunch */}
+                        <td className="px-4 py-3.5">
+                          {s.lunchBreakMode === 'ACTUAL' ? (
+                            <div>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[10px] font-bold">
+                                <Utensils className="w-2.5 h-2.5" />
+                                <span>ACTUAL {s.lunchDurationMinutes}m</span>
+                              </span>
+                              <span className="text-[9px] text-slate-500 block mt-0.5 font-mono truncate max-w-[130px]">
+                                {s.lunchDetails?.replace(/^Actual \d+m\s*\(/, '').replace(/\)$/, '') || 'Punched Break'}
+                              </span>
+                            </div>
+                          ) : s.lunchBreakMode === 'AUTO' && s.lunchDurationMinutes > 0 ? (
+                            <div>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-bold">
+                                <Clock className="w-2.5 h-2.5" />
+                                <span>AUTO {s.lunchDurationMinutes}m</span>
+                              </span>
+                              <span className="text-[9px] text-slate-400 block mt-0.5 font-mono whitespace-nowrap">
+                                1:00 PM – 2:00 PM
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-600 text-xs">No lunch</span>
+                          )}
+                        </td>
+
+                        {/* Net Working Hours */}
+                        <td className="px-4 py-3.5 text-center">
+                          <button
+                            onClick={() => setSelectedBreakdown(s)}
+                            className="w-[95px] h-7 mx-auto flex items-center justify-center gap-1 bg-slate-950 hover:bg-slate-900 border border-emerald-500/20 hover:border-emerald-500/40 rounded-xl text-emerald-400 font-mono font-bold text-xs transition-all shadow-inner"
+                            title="Click to view full attendance calculation breakdown"
+                          >
+                            <span>{formatDurationMinutes(s.workingTimeMinutes)}</span>
+                            <Eye className="w-3 h-3 text-slate-500 group-hover:text-emerald-400 opacity-60" />
+                          </button>
+                        </td>
+
+                        {/* Overtime */}
+                        <td className="px-4 py-3.5 text-center font-mono">
+                          {s.overtimeMinutes > 0 ? (
+                            <span className="px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/20 font-bold text-xs whitespace-nowrap inline-block">
+                              +{formatDurationMinutes(s.overtimeMinutes)}
                             </span>
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-500 border border-slate-700/50 text-[10px]">
-                            <span>No lunch overlap (0m)</span>
+                          ) : (
+                            <span className="text-slate-600 text-xs">—</span>
+                          )}
+                        </td>
+
+                        {/* Late (Single-Line Badge) */}
+                        <td className="px-4 py-3.5 text-center font-mono">
+                          {s.lateMinutes > 0 ? (
+                            <span className="px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold text-xs whitespace-nowrap inline-flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 text-amber-400" />
+                              <span>{formatDurationMinutes(s.lateMinutes)} late</span>
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold whitespace-nowrap inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                              <span>On Time</span>
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-4 py-3.5 text-center">
+                          <span
+                            className={clsx(
+                              'px-2.5 py-1 text-[9px] font-bold rounded-full uppercase border tracking-wider whitespace-nowrap inline-block',
+                              s.status === 'OVERTIME' ? 'bg-purple-500/15 text-purple-300 border-purple-500/30' :
+                              s.status === 'LATE' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
+                              s.status === 'ON_LUNCH' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse' :
+                              s.status === 'ON_BREAK' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30 animate-pulse' :
+                              'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            )}
+                          >
+                            ● {s.status.replace('_', ' ')}
                           </span>
-                        )}
-                      </td>
-                      {/* ── NET WORKING HOURS (CLICKABLE CALCULATION BREAKDOWN) ── */}
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => setSelectedBreakdown(s)}
-                          className="group text-left text-white font-black text-sm font-mono bg-slate-950 hover:bg-slate-900 hover:border-emerald-500/50 px-2.5 py-1 rounded-lg border border-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
-                          title="Click to view full attendance calculation breakdown"
-                        >
-                          <span className="text-emerald-400 group-hover:text-emerald-300 transition-colors">
-                            {formatDurationMinutes(s.workingTimeMinutes)}
-                          </span>
-                          <Eye className="w-3 h-3 text-slate-500 group-hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 font-mono">
-                        {s.overtimeMinutes > 0 ? (
-                          <span className="text-purple-400 font-bold bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
-                            +{formatDurationMinutes(s.overtimeMinutes)}
-                          </span>
-                        ) : <span className="text-slate-600">—</span>}
-                      </td>
-                      <td className="px-4 py-3 font-mono">
-                        {s.lateMinutes > 0 ? (
-                          <span className="text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                            {formatDurationMinutes(s.lateMinutes)} Late
-                          </span>
-                        ) : (
-                          <span className="text-emerald-400/70 font-bold">On Time</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={clsx(
-                          'px-2.5 py-1 text-[9px] font-bold rounded-full uppercase border',
-                          s.status === 'OVERTIME' ? 'bg-purple-500/20 text-purple-300 border-purple-500/40' :
-                          s.status === 'LATE' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
-                          s.status === 'ON_LUNCH' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse' :
-                          s.status === 'ON_BREAK' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30 animate-pulse' :
-                          'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                        )}>
-                          {s.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => {
-                            setSelectedTimeline(s.employeeId);
-                            setTimelineEvents(fetchEmployeeTimeline(s.employeeId));
-                          }}
-                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[11px] transition flex items-center gap-1"
-                        >
-                          <Clock className="w-3 h-3 text-amber-400" />
-                          <span>{s.eventsCount} Events</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+
+                        {/* Timeline */}
+                        <td className="px-4 py-3.5 text-center">
+                          <button
+                            onClick={() => {
+                              setSelectedTimeline(s.employeeId);
+                              setTimelineEvents(fetchEmployeeTimeline(s.employeeId));
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 font-semibold text-xs border border-slate-700/60 transition flex items-center justify-center gap-1 mx-auto whitespace-nowrap"
+                          >
+                            <Clock className="w-3 h-3 text-amber-400" />
+                            <span>{s.eventsCount}</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Summary Cards Layout */}
+          <div className="block md:hidden p-4 space-y-3">
+            {filteredSummaries.length === 0 ? (
+              <p className="text-center text-xs text-slate-500 py-8">No attendance records found.</p>
+            ) : (
+              filteredSummaries.map((s) => {
+                const checkIn = parseDateTimeString(s.checkInTime);
+                const checkOut = parseDateTimeString(s.checkOutTime);
+                return (
+                  <div key={s.id} className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-bold text-slate-100 text-sm">{s.employeeName}</h4>
+                        <p className="text-[10px] text-slate-500">{s.department}</p>
+                      </div>
+                      <span className="px-2.5 py-1 text-[9px] font-bold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        {s.status}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                      <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                        <span className="text-[10px] text-slate-500 block font-sans">Check In</span>
+                        <span className="text-emerald-400 font-bold">{checkIn.time || '—'}</span>
+                      </div>
+                      <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                        <span className="text-[10px] text-slate-500 block font-sans">Check Out</span>
+                        <span className="text-purple-400 font-bold">{checkOut.time || 'Working'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-xs">
+                      <span className="text-slate-400">Net Working:</span>
+                      <span className="text-emerald-400 font-bold font-mono">{formatDurationMinutes(s.workingTimeMinutes)}</span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}
