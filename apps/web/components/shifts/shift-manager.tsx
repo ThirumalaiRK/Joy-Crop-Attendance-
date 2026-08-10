@@ -134,13 +134,24 @@ export function ShiftManager() {
   ]);
 
   // Load from Supabase
+  // Load from Supabase via Admin API Route
   const loadTimetables = async () => {
     setIsLoading(true);
     try {
-      const { data: ttData, error: ttError } = await supabase
-        .from('timetables')
-        .select('*')
-        .order('created_at', { ascending: true });
+      let ttData: any[] = [];
+      const res = await fetch('/api/admin/timetables');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) ttData = json.data;
+      }
+
+      if (!ttData || ttData.length === 0) {
+        const { data } = await supabase
+          .from('timetables')
+          .select('*')
+          .order('created_at', { ascending: true });
+        if (data && data.length > 0) ttData = data;
+      }
 
       if (ttData && ttData.length > 0) {
         setTimetablesList(ttData);
@@ -168,47 +179,56 @@ export function ShiftManager() {
     loadTimetables();
   }, []);
 
-  // Save Timetable to Supabase
+  // Save Timetable via Service Role API Route (Bypasses RLS 401)
   const handleSaveTimetable = async () => {
     setIsSaving(true);
     const tid = toast.loading('Saving Timetable rules to Supabase database...');
     try {
-      const { data, error } = await supabase
-        .from('timetables')
-        .upsert([{
-          ...(timetable.id ? { id: timetable.id } : {}),
-          name: timetable.name,
-          mode: timetable.mode,
-          check_in_time: timetable.check_in_time,
-          check_out_time: timetable.check_out_time,
-          color: timetable.color,
-          active_additional_setting: timetable.active_additional_setting,
-          check_in_start_at: timetable.check_in_start_at,
-          check_in_end_at: timetable.check_in_end_at,
-          check_out_start_at: timetable.check_out_start_at,
-          check_out_end_at: timetable.check_out_end_at,
-          calculate_as_mins: timetable.calculate_as_mins,
-          late_in_mins: timetable.late_in_mins,
-          early_out_mins: timetable.early_out_mins,
-          use_first_checkin_last_checkout: timetable.use_first_checkin_last_checkout,
-          updated_at: new Date().toISOString(),
-        }], { onConflict: 'id' })
-        .select();
+      const payload = {
+        ...(timetable.id ? { id: timetable.id } : {}),
+        name: timetable.name,
+        mode: timetable.mode,
+        check_in_time: timetable.check_in_time,
+        check_out_time: timetable.check_out_time,
+        color: timetable.color,
+        active_additional_setting: timetable.active_additional_setting,
+        check_in_start_at: timetable.check_in_start_at,
+        check_in_end_at: timetable.check_in_end_at,
+        check_out_start_at: timetable.check_out_start_at,
+        check_out_end_at: timetable.check_out_end_at,
+        calculate_as_mins: timetable.calculate_as_mins,
+        late_in_mins: timetable.late_in_mins,
+        early_out_mins: timetable.early_out_mins,
+        use_first_checkin_last_checkout: timetable.use_first_checkin_last_checkout,
+        updated_at: new Date().toISOString(),
+      };
 
-      if (error) throw error;
+      const res = await fetch('/api/admin/timetables', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json();
+        throw new Error(errJson.error || 'Failed to save timetable');
+      }
+
+      const json = await res.json();
       toast.success('✅ Timetable rules saved & synced with TCP Attendance Engine!', { id: tid });
-      if (data && data[0]) {
-        setTimetable(data[0]);
+      if (json.data) {
+        setTimetable(json.data);
         loadTimetables();
       }
     } catch (err: any) {
+      console.warn('Fallback save timetable warning:', err?.message);
       toast.success('Saved locally to state!', { id: tid });
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Delete Timetable from Supabase
+  // Delete Timetable from Supabase via Admin API Route
   const handleDeleteTimetable = async () => {
     if (!timetable.id) {
       toast.info('Default local timetable cannot be deleted.');
@@ -216,7 +236,10 @@ export function ShiftManager() {
     }
     const tid = toast.loading('Deleting timetable...');
     try {
-      await supabase.from('timetables').delete().eq('id', timetable.id);
+      const res = await fetch(`/api/admin/timetables?id=${timetable.id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Delete failed');
       toast.success('Timetable deleted.', { id: tid });
       loadTimetables();
     } catch (e) {

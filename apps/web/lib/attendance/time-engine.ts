@@ -1,5 +1,6 @@
 import { supabase, logAuditEntry } from '../supabase';
 import { eventBus } from '../events/event-bus';
+import { getAttendanceDayRange, utcToIST, parseDeviceTimeToUTC } from '../timezone';
 import {
   AttendanceEvent,
   AttendanceEventType,

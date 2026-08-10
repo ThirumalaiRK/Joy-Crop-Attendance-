@@ -3,6 +3,7 @@ import { AppDataSource, DeviceCache, AttendanceCache, UserCache } from "../db";
 import { supabase } from "../supabase";
 import { AttendanceProcessor } from "./AttendanceProcessor";
 import { deviceManager } from "../DeviceManager";
+import { getAttendanceDayRange, parseDeviceTimeToUTC, utcToIST } from "../timezone";
 
 /**
  * Delta Sync State: last processed log timestamp per device IP.
@@ -64,13 +65,10 @@ export const startSyncEngine = () => {
           }
         }
 
-        // 2. Delta attendance sync — only logs newer than last processed time (IST)
-        const sinceMs = lastProcessedTime.get(dev.ip) ?? (() => {
-          const istNowStr = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
-          const t = new Date(istNowStr);
-          t.setHours(0, 0, 0, 0);
-          return t.getTime();
-        })();
+        // 2. Delta attendance sync — only logs newer than last processed time (UTC & IST aligned)
+        const dayRange = getAttendanceDayRange();
+        const defaultStartMs = new Date(dayRange.startUTC).getTime();
+        const sinceMs = lastProcessedTime.get(dev.ip) ?? defaultStartMs;
 
         let allLogs: any[] = [];
         try {
@@ -81,13 +79,15 @@ export const startSyncEngine = () => {
         }
 
         const newLogs = allLogs.filter((log: any) => {
-          try { return new Date(log.recordTime).getTime() > sinceMs; }
-          catch (_) { return false; }
+          try {
+            const utcIso = parseDeviceTimeToUTC(log.recordTime);
+            return new Date(utcIso).getTime() > sinceMs;
+          } catch (_) { return false; }
         });
 
         if (newLogs.length === 0) {
-          const timeFormat = new Date(sinceMs).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
-          console.log(`[SyncEngine] No new logs for ${dev.ip} since ${timeFormat} IST`);
+          const displayTime = utcToIST(sinceMs).toFormat('hh:mm:ss a');
+          console.log(`[SyncEngine] No new logs for ${dev.ip} since ${displayTime} IST (Query UTC: ${new Date(sinceMs).toISOString()})`);
           continue;
         }
 

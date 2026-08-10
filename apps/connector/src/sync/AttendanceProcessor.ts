@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { employeeCache } from '../cache/EmployeeCache';
+import { parseDeviceTimeToUTC, getAttendanceDayRange } from '../timezone';
 
 export interface RawPunchLog {
   device_ip: string;
@@ -47,12 +48,14 @@ export class AttendanceProcessor {
    * Main entry point: Processes a raw TCP punch from biometric hardware
    */
   static async processPunch(raw: RawPunchLog): Promise<any> {
-    const punchTime = new Date(raw.event_time);
-    const dateStr = punchTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD in IST
+    const utcIso = parseDeviceTimeToUTC(raw.event_time);
+    const punchTime = new Date(utcIso);
+    const dayRange = getAttendanceDayRange(utcIso);
+    const dateStr = dayRange.dateIST; // YYYY-MM-DD in IST
     const rawUserIdStr = String(raw.device_user_id).trim();
     const timeStrIST = punchTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
-    console.log(`\n⚙️ [AttendanceProcessor] Processing raw punch for User ID "${rawUserIdStr}" at ${timeStrIST} (${raw.device_ip})`);
+    console.log(`\n⚙️ [AttendanceProcessor] Processing raw punch for User ID "${rawUserIdStr}" at ${timeStrIST} IST (${raw.device_ip})`);
 
     // ─── GUARD 1: Reject unenrolled "finger 0" / user ID 0 ────────────────────
     if (rawUserIdStr === '0' || rawUserIdStr === '' || rawUserIdStr === 'NaN') {
