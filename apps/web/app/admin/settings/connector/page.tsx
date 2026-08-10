@@ -68,7 +68,13 @@ export default function ConnectorStatusPage() {
   const fetchStatus = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${CONNECTOR_URL}/api/status`, { signal: AbortSignal.timeout(5000) });
+      const res = await fetch(`${CONNECTOR_URL}/api/status`, {
+        signal: AbortSignal.timeout(5000),
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+          'Accept': 'application/json',
+        },
+      });
       if (!res.ok) throw new Error("Connector returned an error");
       const data = await res.json();
       setStatus(data);

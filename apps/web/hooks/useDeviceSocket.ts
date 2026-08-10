@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
@@ -26,6 +26,10 @@ export function useDeviceSocket() {
 
   useEffect(() => {
     const socketInstance = io(CONNECTOR_URL, {
+      transports: ['websocket', 'polling'],
+      extraHeaders: {
+        'ngrok-skip-browser-warning': 'true',
+      },
       reconnection: true,
       reconnectionAttempts: Infinity,   // retry forever like the connector does
       reconnectionDelay: 1000,

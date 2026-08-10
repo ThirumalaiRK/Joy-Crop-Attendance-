@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 /**
  * useAttendanceFeed
  *
@@ -33,6 +33,10 @@ let refCount = 0;
 function getSharedSocket(): Socket {
   if (!sharedSocket || !sharedSocket.connected) {
     sharedSocket = io(CONNECTOR_URL, {
+      transports: ['websocket', 'polling'],
+      extraHeaders: {
+        'ngrok-skip-browser-warning': 'true',
+      },
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
