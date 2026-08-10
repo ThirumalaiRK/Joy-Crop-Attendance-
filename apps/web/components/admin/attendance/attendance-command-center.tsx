@@ -57,16 +57,30 @@ export function AttendanceCommandCenter() {
       .select('*')
       .order('created_at', { ascending: false });
 
+    // IST midnight in UTC = date - 1 day at 18:30 UTC  (IST = UTC+5:30)
+    // But simplest & most reliable: filter on `date` field (stored as YYYY-MM-DD IST)
     if (dateScope === 'today') {
-      query = query.or(`date.eq.${TODAY_STR},created_at.gte.${TODAY_STR}T00:00:00.000Z`);
+      // Records for today (IST date). Also catch stale records with 'Today' as literal.
+      query = query.or(`date.eq.${TODAY_STR},date.eq.Today,date.eq.today`);
     } else if (dateScope === 'custom_date' && selectedDate) {
-      query = query.or(`date.eq.${selectedDate},created_at.gte.${selectedDate}T00:00:00.000Z`);
+      // Exact day match on the IST date field
+      // Narrow to only records created within that IST calendar day
+      // IST day starts at 18:30 UTC the day before, ends at 18:29:59 UTC same day
+      const startUTC = `${selectedDate}T00:00:00+05:30`;  // midnight IST = UTC-5:30
+      const endUTC   = `${selectedDate}T23:59:59+05:30`;  // end of day IST
+      query = query.or(`date.eq.${selectedDate},and(created_at.gte.${startUTC},created_at.lte.${endUTC})`);
     } else if (dateScope === 'month' && selectedDate) {
-      const monthPrefix = selectedDate.slice(0, 7);
-      query = query.or(`date.gte.${monthPrefix}-01,created_at.gte.${monthPrefix}-01T00:00:00.000Z`);
+      const monthPrefix = selectedDate.slice(0, 7);  // e.g. '2026-08'
+      const monthStart = `${monthPrefix}-01`;
+      // Find the last day of the selected month
+      const nextMonthDate = new Date(selectedDate.slice(0, 7) + '-01');
+      nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+      const monthEnd = nextMonthDate.toLocaleDateString('en-CA');
+      query = query.gte('date', monthStart).lt('date', monthEnd);
     }
+    // dateScope === 'all': no filter — fetch everything
 
-    const { data } = await query.limit(200);
+    const { data } = await query.limit(500);
     const rawRows = data ?? [];
 
     // Deduplicate records by canonical employee ID so count matches working employees
@@ -96,13 +110,21 @@ export function AttendanceCommandCenter() {
   // Load Time Engine Summaries
   const loadTimeEngineSummaries = async () => {
     await syncSupabaseEvents();
-    const targetDateParam = dateScope === 'today' ? TODAY_STR : dateScope === 'custom_date' ? selectedDate : 'ALL';
+    let targetDateParam: string;
+    if (dateScope === 'today') {
+      targetDateParam = TODAY_STR;  // IST date e.g. '2026-08-10'
+    } else if (dateScope === 'custom_date' && selectedDate) {
+      targetDateParam = selectedDate;
+    } else {
+      targetDateParam = 'ALL';  // month and all-history both show everything
+    }
     const sums = fetchAllAttendanceSummaries(targetDateParam);
     setSummaries(sums);
     if (selectedTimeline) {
       setTimelineEvents(fetchEmployeeTimeline(selectedTimeline));
     }
   };
+
 
   const handleResetEngine = async () => {
     if (!confirm('Rebuild all calculated attendance sessions from raw biometric events?')) return;

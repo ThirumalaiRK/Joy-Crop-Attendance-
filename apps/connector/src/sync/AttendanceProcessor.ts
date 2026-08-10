@@ -446,6 +446,10 @@ export class AttendanceProcessor {
       : null;
 
     try {
+      // IMPORTANT: session.session_date is always stored as IST YYYY-MM-DD (e.g. '2026-08-10')
+      // Do NOT use 'Today' — it breaks date filtering for past dates and monthly payroll view
+      const istDate = session.session_date || new Date(session.check_in_time || Date.now()).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
       await supabase.from('attendance_records').upsert([{
         id: recId,
         employee_id: empCode,
@@ -454,7 +458,7 @@ export class AttendanceProcessor {
         department: dept,
         check_in_time: checkInStr,
         check_out_time: checkOutStr,
-        date: 'Today',
+        date: istDate,  // IST date e.g. '2026-08-10' — enables day/month/history filtering
         method: 'fingerprint',
         status: session.status === 'LATE' ? 'late' : 'present',
         device_name: `Identix K90 Pro Terminal (${deviceIp})`,
@@ -464,6 +468,7 @@ export class AttendanceProcessor {
       }], { onConflict: 'id' });
     } catch (_) {}
   }
+
 
   /**
    * Loads the active timetable rules configured in Supabase by ZKTime.Net Timetable UI
