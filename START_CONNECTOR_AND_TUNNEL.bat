@@ -17,7 +17,7 @@ echo.
 
 :: 1. Start Connector in background window
 echo [1/2] Starting Biometric TCP Connector on Port 4000...
-start "JRM Biometric Connector :4000" /MIN cmd /c "cd /d "%CONNECTOR_DIR%" && npm run dev"
+start "JRM Biometric Connector :4000" /MIN cmd /c "cd /d "%CONNECTOR_DIR%" && npm run build && npm run start"
 
 :: Wait 3 seconds for connector to initialize
 timeout /t 3 /nobreak >nul

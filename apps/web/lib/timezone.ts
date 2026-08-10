@@ -37,7 +37,7 @@ export function utcToIST(value: string | Date | number): DateTime {
 export function istToUTC(value: string): string {
   const dt = DateTime.fromISO(value, { zone: APP_TIMEZONE });
   if (dt.isValid) {
-    return dt.toUTC().toISOString();
+    return dt.toUTC().toISO()!;
   }
   return new Date(value).toISOString();
 }
@@ -74,7 +74,7 @@ export function parseDeviceTimeToUTC(deviceTimeStr: string | Date): string {
     return new Date(str).toISOString();
   }
 
-  return dt.toUTC().toISOString();
+  return dt.toUTC().toISO()!;
 }
 
 /**
@@ -105,8 +105,8 @@ export function getAttendanceDayRange(dateISTStr?: string) {
   const startIST = baseIST.startOf('day');
   const endIST = baseIST.endOf('day');
 
-  const startUTC = startIST.toUTC().toISOString();
-  const endUTC = endIST.toUTC().toISOString();
+  const startUTC = startIST.toUTC().toISO()!;
+  const endUTC = endIST.toUTC().toISO()!;
 
   return {
     dateIST: startIST.toFormat('yyyy-MM-dd'),
