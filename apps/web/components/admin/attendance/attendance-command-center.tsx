@@ -60,62 +60,98 @@ export function AttendanceCommandCenter() {
   const [activeView, setActiveView] = useState<'live' | 'engine'>('engine');
   const [exportFormat, setExportFormat] = useState<'pdf' | 'excel' | null>(null);
 
-  // Load legacy attendance_records from Supabase
+  // Load real attendance_records from Supabase
   const loadLegacyRecords = async (showLoading = false) => {
     if (showLoading) setLoading(true);
-    let query = supabase
-      .from('attendance_records')
-      .select('*')
-      .order('created_at', { ascending: false });
 
-    // IST midnight in UTC = date - 1 day at 18:30 UTC  (IST = UTC+5:30)
-    // But simplest & most reliable: filter on `date` field (stored as YYYY-MM-DD IST)
-    if (dateScope === 'today') {
-      // Records for today (IST date). Also catch stale records with 'Today' as literal.
-      query = query.or(`date.eq.${TODAY_STR},date.eq.Today,date.eq.today`);
-    } else if (dateScope === 'custom_date' && selectedDate) {
-      // Exact day match on the IST date field
-      // Narrow to only records created within that IST calendar day
-      // IST day starts at 18:30 UTC the day before, ends at 18:29:59 UTC same day
-      const startUTC = `${selectedDate}T00:00:00+05:30`;  // midnight IST = UTC-5:30
-      const endUTC   = `${selectedDate}T23:59:59+05:30`;  // end of day IST
-      query = query.or(`date.eq.${selectedDate},and(created_at.gte.${startUTC},created_at.lte.${endUTC})`);
-    } else if (dateScope === 'month' && selectedDate) {
-      const monthPrefix = selectedDate.slice(0, 7);  // e.g. '2026-08'
-      const monthStart = `${monthPrefix}-01`;
-      // Find the last day of the selected month
-      const nextMonthDate = new Date(selectedDate.slice(0, 7) + '-01');
-      nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
-      const monthEnd = nextMonthDate.toLocaleDateString('en-CA');
-      query = query.gte('date', monthStart).lt('date', monthEnd);
-    }
-    // dateScope === 'all': no filter — fetch everything
+    try {
+      // Fetch official employee lookup table from Supabase
+      const { data: empData } = await supabase
+        .from('employees')
+        .select('id, full_name, department, employee_code');
 
-    const { data } = await query.limit(500);
-    const rawRows = data ?? [];
+      const empLookup = new Map<string, { name: string; dept: string }>();
+      (empData ?? []).forEach((e: any) => {
+        const idKey = (e.id || '').toLowerCase().trim();
+        const codeKey = (e.employee_code || '').toLowerCase().trim();
+        if (idKey) empLookup.set(idKey, { name: e.full_name, dept: e.department || 'General' });
+        if (codeKey) empLookup.set(codeKey, { name: e.full_name, dept: e.department || 'General' });
+      });
 
-    // Deduplicate records by canonical employee ID so count matches working employees
-    const seenEmps = new Set<string>();
-    const uniqueRows: any[] = [];
-    rawRows.forEach((r: any) => {
-      const raw = (r.employee_id || r.employee_name || '').trim();
-      const num = parseInt(raw.replace(/\D/g, ''), 10);
-      const key = !isNaN(num) ? `EMP-${num}` : raw;
-      if (!seenEmps.has(key)) {
-        seenEmps.add(key);
-        uniqueRows.push(r);
+      let query = supabase
+        .from('attendance_records')
+        .select('*')
+        .not('employee_name', 'ilike', '%Employee R K%')
+        .not('employee_id', 'eq', 'EMP-NaN')
+        .order('created_at', { ascending: false });
+
+      if (dateScope === 'today') {
+        query = query.eq('date', TODAY_STR);
+      } else if (dateScope === 'custom_date' && selectedDate) {
+        query = query.eq('date', selectedDate);
+      } else if (dateScope === 'month' && selectedDate) {
+        const monthPrefix = selectedDate.slice(0, 7);
+        const monthStart = `${monthPrefix}-01`;
+        const nextMonthDate = new Date(selectedDate.slice(0, 7) + '-01');
+        nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+        const monthEnd = nextMonthDate.toLocaleDateString('en-CA');
+        query = query.gte('date', monthStart).lt('date', monthEnd);
       }
-    });
 
-    setRecords(uniqueRows);
-    setStats({
-      present: uniqueRows.filter((r) => r.status === 'present').length,
-      late: uniqueRows.filter((r) => r.status === 'late').length,
-      overtime: uniqueRows.filter((r) => r.status === 'overtime').length,
-      // '—' is truthy — only count employees who have NO real check-out time
-      inside: uniqueRows.filter((r) => !r.check_out_time || r.check_out_time === '—' || r.check_out_time === '-').length,
-    });
-    setLoading(false);
+      const { data } = await query.limit(500);
+      const rawRows = data ?? [];
+
+      // Filter out corrupted records without check-in time or fake users
+      const validRows = rawRows.filter(
+        (r) =>
+          r.employee_name !== 'Employee R K' &&
+          r.employee_id !== 'EMP-NaN' &&
+          r.check_in_time &&
+          r.check_in_time !== '—' &&
+          r.check_in_time !== '-'
+      );
+
+      // Deduplicate by employee ID, taking latest record
+      const seenEmps = new Set<string>();
+      const uniqueRows: any[] = [];
+      validRows.forEach((r: any) => {
+        const raw = (r.employee_id || '').toLowerCase().trim();
+        const empMatch = empLookup.get(raw);
+        const resolvedName = empMatch?.name || r.employee_name;
+        const resolvedDept = empMatch?.dept || r.department || 'General';
+
+        if (!seenEmps.has(raw || resolvedName)) {
+          seenEmps.add(raw || resolvedName);
+          uniqueRows.push({
+            ...r,
+            employee_name: resolvedName === 'Employee R K' ? 'Employee Record Unavailable' : resolvedName,
+            department: resolvedDept,
+          });
+        }
+      });
+
+      setRecords(uniqueRows);
+
+      // Calculate Summary Card Metrics cleanly from real records
+      const presentCount = uniqueRows.length;
+      const lateCount = uniqueRows.filter((r) => r.status === 'late').length;
+      const overtimeCount = uniqueRows.filter((r) => r.status === 'overtime').length;
+      const insideCount = uniqueRows.filter((r) => {
+        const hasCheckOut = r.check_out_time && r.check_out_time !== '—' && r.check_out_time !== '-';
+        return !hasCheckOut;
+      }).length;
+
+      setStats({
+        present: presentCount,
+        late: lateCount,
+        overtime: overtimeCount,
+        inside: insideCount,
+      });
+    } catch (err) {
+      console.warn('loadLegacyRecords error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Load Time Engine Summaries
