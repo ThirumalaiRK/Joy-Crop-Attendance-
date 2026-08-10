@@ -114,6 +114,15 @@ export class AttendanceProcessor {
 
     console.log(`👤 [AttendanceProcessor] Mapped User ID "${rawUserIdStr}" -> Employee: ${empName} (${empCode})`);
 
+    // Ensure employee enrollment status in database is synchronized
+    try {
+      supabase.from('employees').update({
+        fingerprint_enrolled: true,
+        is_enrolled: true,
+        updated_at: new Date().toISOString(),
+      }).eq('id', employee.id).then(() => {});
+    } catch (_) {}
+
     // STEP 3: Load Active Shift Timetable from Supabase Database
     const shift = await this.loadActiveTimetable();
 

@@ -241,6 +241,23 @@ export async function fetchEmployeesFromSupabase(): Promise<Employee[]> {
           const num = parseInt(String(l.device_user_id).replace(/\D/g, ''), 10);
           if (num > 0) {
             enrolledSet.add(`EMP-${num}`);
+            enrolledSet.add(`EMP-${String(num).padStart(2, '0')}`);
+            enrolledSet.add(`EMP-${String(num).padStart(3, '0')}`);
+            enrolledSet.add(`EMP-${String(num).padStart(6, '0')}`);
+            enrolledSet.add(String(num));
+          }
+        }
+      });
+
+      const { data: recLogs } = await supabase.from('attendance_records').select('employee_id').limit(100);
+      (recLogs || []).forEach(r => {
+        if (r.employee_id) {
+          enrolledSet.add(String(r.employee_id).trim().toUpperCase());
+          const num = parseInt(String(r.employee_id).replace(/\D/g, ''), 10);
+          if (num > 0) {
+            enrolledSet.add(`EMP-${num}`);
+            enrolledSet.add(`EMP-${String(num).padStart(2, '0')}`);
+            enrolledSet.add(`EMP-${String(num).padStart(3, '0')}`);
             enrolledSet.add(`EMP-${String(num).padStart(6, '0')}`);
             enrolledSet.add(String(num));
           }
@@ -254,6 +271,8 @@ export async function fetchEmployeesFromSupabase(): Promise<Employee[]> {
           const num = parseInt(String(t.employee_code).replace(/\D/g, ''), 10);
           if (num > 0) {
             enrolledSet.add(`EMP-${num}`);
+            enrolledSet.add(`EMP-${String(num).padStart(2, '0')}`);
+            enrolledSet.add(`EMP-${String(num).padStart(3, '0')}`);
             enrolledSet.add(`EMP-${String(num).padStart(6, '0')}`);
             enrolledSet.add(String(num));
           }
