@@ -32,7 +32,7 @@ export class BranchService {
         supabase.from('biometric_devices').select('*'),
       ]);
 
-      const rawBranches: Branch[] = branchRes.data && branchRes.data.length > 0 ? branchRes.data : DEFAULT_BRANCHES;
+      const rawBranches: Branch[] = branchRes.data ?? [];
       const allEmps: any[] = empRes.data ?? [];
       const allDevs: any[] = devRes.data ?? [];
 
