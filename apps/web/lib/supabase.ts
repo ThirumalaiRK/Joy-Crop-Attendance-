@@ -264,11 +264,12 @@ export async function fetchEmployeesFromSupabase(): Promise<Employee[]> {
         }
       });
 
-      const { data: tmpls } = await supabase.from('fingerprint_templates').select('employee_code');
-      (tmpls || []).forEach(t => {
-        if (t.employee_code) {
-          enrolledSet.add(String(t.employee_code).trim().toUpperCase());
-          const num = parseInt(String(t.employee_code).replace(/\D/g, ''), 10);
+      const { data: tmpls } = await supabase.from('fingerprint_templates').select('employee_id');
+      (tmpls || []).forEach((t: any) => {
+        const empCode = t.employee_id || t.employee_code;
+        if (empCode) {
+          enrolledSet.add(String(empCode).trim().toUpperCase());
+          const num = parseInt(String(empCode).replace(/\D/g, ''), 10);
           if (num > 0) {
             enrolledSet.add(`EMP-${num}`);
             enrolledSet.add(`EMP-${String(num).padStart(2, '0')}`);

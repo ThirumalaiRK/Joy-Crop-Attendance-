@@ -25,17 +25,25 @@ export function useDeviceSocket() {
   const deviceStatusesRef = useRef<Record<string, DeviceStatusState>>({});
 
   useEffect(() => {
+    const isBrowser = typeof window !== 'undefined';
+    const isLocalhostConnector = CONNECTOR_URL.includes('localhost') || CONNECTOR_URL.includes('127.0.0.1');
+    const isCloud = isBrowser && window.location.hostname.includes('vercel.app');
+
+    // On cloud Vercel deployments without an active public tunnel, skip direct localhost socket
+    if (isCloud && isLocalhostConnector) {
+      return;
+    }
+
     const socketInstance = io(CONNECTOR_URL, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       extraHeaders: {
         'ngrok-skip-browser-warning': 'true',
       },
       reconnection: true,
-      reconnectionAttempts: Infinity,   // retry forever like the connector does
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 30_000,     // cap at 30s (matches connector backoff)
-      randomizationFactor: 0.3,
-      timeout: 5000,
+      reconnectionAttempts: 3,
+      reconnectionDelay: 5000,
+      reconnectionDelayMax: 30_000,
+      timeout: 4000,
     });
 
     socketInstance.on("connect", () => {

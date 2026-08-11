@@ -425,10 +425,15 @@ export function AdminEmployees() {
 
       // Update Supabase to mark fingerprint_enrolled = true
       try {
-        await supabase
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(code);
+        const q = supabase
           .from('employees')
-          .update({ fingerprint_enrolled: true, is_enrolled: true, status: 'Active' })
-          .or(`id.eq.${code},employee_code.eq.${code}`);
+          .update({ fingerprint_enrolled: true, is_enrolled: true, status: 'Active' });
+        if (isUuid) {
+          await q.or(`id.eq.${code},employee_code.eq.${code}`);
+        } else {
+          await q.eq('employee_code', code);
+        }
       } catch (_) {}
 
     } catch (err: any) {
