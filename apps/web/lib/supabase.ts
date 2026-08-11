@@ -641,11 +641,14 @@ export async function addFingerprintToExistingEmployeeInDb(
 ): Promise<{ success: boolean; message: string; data?: any }> {
   try {
     // 1. Verify employee exists in Supabase DB
-    const { data: emp, error: empErr } = await supabase
-      .from('employees')
-      .select('*')
-      .or(`id.eq.${employeeCode},employee_code.eq.${employeeCode}`)
-      .limit(1);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(employeeCode);
+    let empQuery = supabase.from('employees').select('*');
+    if (isUuid) {
+      empQuery = empQuery.or(`id.eq.${employeeCode},employee_code.eq.${employeeCode}`);
+    } else {
+      empQuery = empQuery.eq('employee_code', employeeCode);
+    }
+    const { data: emp, error: empErr } = await empQuery.limit(1);
 
     if (empErr || !emp || emp.length === 0) {
       return { success: false, message: `Employee with code ${employeeCode} not found in Supabase DB.` };
@@ -718,13 +721,18 @@ export async function addFingerprintToExistingEmployeeInDb(
     }
 
     // 5. Update employee's fingerprint enrollment status and primary template in employees table
-    await supabase
+    const isEmpUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(employeeCode);
+    let updateEmpQuery = supabase
       .from('employees')
       .update({
         fingerprint_enrolled: true,
         enrolled_fingerprint_base64: fingerTemplate,
-      })
-      .or(`id.eq.${employeeCode},employee_code.eq.${employeeCode}`);
+      });
+    if (isEmpUuid) {
+      await updateEmpQuery.or(`id.eq.${employeeCode},employee_code.eq.${employeeCode}`);
+    } else {
+      await updateEmpQuery.eq('employee_code', employeeCode);
+    }
 
     return {
       success: true,
@@ -943,12 +951,20 @@ export async function deleteEmployeeFromSupabase(
     } catch (_) {}
 
     // 2. Direct Supabase Fallback
+    const isDelUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(employeeId);
+    let delEmpQuery = supabase.from('employees').delete();
+    if (isDelUuid) {
+      delEmpQuery = delEmpQuery.or(`id.eq.${employeeId},employee_code.eq.${employeeId}`);
+    } else {
+      delEmpQuery = delEmpQuery.eq('employee_code', employeeId);
+    }
+
     await Promise.allSettled([
       supabase.from('employee_roles').delete().or(`employee_id.eq.${employeeId}`),
       supabase.from('employee_portal_access').delete().or(`employee_id.eq.${employeeId}`),
-      supabase.from('fingerprint_templates').delete().or(`employee_uuid.eq.${employeeId},employee_code.eq.${employeeId}`),
+      supabase.from('fingerprint_templates').delete().or(`employee_id.eq.${employeeId}`),
       supabase.from('employee_accounts').delete().or(`employee_id.eq.${employeeId}`),
-      supabase.from('employees').delete().or(`id.eq.${employeeId},employee_code.eq.${employeeId}`),
+      delEmpQuery,
     ]);
 
     // 3. Direct Hardware Connector Gateway Fallback (Port 4000)
@@ -1043,14 +1059,19 @@ export async function provisionEmployeePortalAccount(
       ], { onConflict: 'auth_user_id,role_id' });
 
       // Update employees table auth_user_id linkage
-      await supabase
+      const isProvUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(employeeId);
+      let provEmpQuery = supabase
         .from('employees')
         .update({
           auth_user_id: authUserId,
           portal_status: 'Active',
           email,
-        })
-        .or(`id.eq.${employeeId},employee_code.eq.${employeeId}`);
+        });
+      if (isProvUuid) {
+        await provEmpQuery.or(`id.eq.${employeeId},employee_code.eq.${employeeId}`);
+      } else {
+        await provEmpQuery.eq('employee_code', employeeId);
+      }
     }
 
     // 4. Audit Log Entry

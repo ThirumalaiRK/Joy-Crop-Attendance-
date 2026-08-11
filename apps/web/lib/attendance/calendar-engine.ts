@@ -107,7 +107,7 @@ export async function fetchMonthlyCalendarData(
     const { data } = await supabase
       .from('attendance_events')
       .select('*')
-      .or(`employee_id.eq.${employeeId},employee_code.eq.${employeeId}`)
+      .eq('employee_id', employeeId)
       .gte('timestamp', `${startDate}T00:00:00Z`)
       .lte('timestamp', `${endDate}T23:59:59Z`)
       .order('timestamp', { ascending: true });
