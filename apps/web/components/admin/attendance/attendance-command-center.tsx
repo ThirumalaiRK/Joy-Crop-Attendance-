@@ -550,6 +550,8 @@ export function AttendanceCommandCenter() {
                               <span className="text-[10px] text-slate-400 block leading-tight">{checkOut.date}</span>
                               <span className="text-purple-400 font-bold text-xs block mt-0.5">{checkOut.time}</span>
                             </div>
+                          ) : s.status === 'ABSENT' ? (
+                            <span className="text-slate-600 font-sans text-xs block">—</span>
                           ) : (
                             <div>
                               <span className="text-slate-600 font-sans text-xs block">—</span>
@@ -621,7 +623,9 @@ export function AttendanceCommandCenter() {
 
                         {/* Late (Single-Line Badge) */}
                         <td className="px-4 py-3.5 text-center font-mono">
-                          {s.lateMinutes > 0 ? (
+                          {s.status === 'ABSENT' ? (
+                            <span className="text-slate-600 font-sans text-xs">—</span>
+                          ) : s.lateMinutes > 0 ? (
                             <span className="px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold text-xs whitespace-nowrap inline-flex items-center gap-1">
                               <AlertTriangle className="w-3 h-3 text-amber-400" />
                               <span>{formatDurationMinutes(s.lateMinutes)} late</span>
@@ -639,6 +643,7 @@ export function AttendanceCommandCenter() {
                           <span
                             className={clsx(
                               'px-2.5 py-1 text-[9px] font-bold rounded-full uppercase border tracking-wider whitespace-nowrap inline-block',
+                              s.status === 'ABSENT' ? 'bg-rose-500/15 text-rose-400 border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.15)]' :
                               s.status === 'OVERTIME' ? 'bg-purple-500/15 text-purple-300 border-purple-500/30' :
                               s.status === 'LATE' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
                               s.status === 'ON_LUNCH' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse' :
@@ -686,8 +691,14 @@ export function AttendanceCommandCenter() {
                         <h4 className="font-bold text-slate-100 text-sm">{s.employeeName}</h4>
                         <p className="text-[10px] text-slate-500">{s.department}</p>
                       </div>
-                      <span className="px-2.5 py-1 text-[9px] font-bold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        {s.status}
+                      <span className={clsx(
+                        'px-2.5 py-1 text-[9px] font-bold rounded-full uppercase border tracking-wider',
+                        s.status === 'ABSENT' ? 'bg-rose-500/15 text-rose-400 border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.15)]' :
+                        s.status === 'LATE' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
+                        s.status === 'OVERTIME' ? 'bg-purple-500/15 text-purple-300 border-purple-500/30' :
+                        'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      )}>
+                        ● {s.status}
                       </span>
                     </div>
 
@@ -698,7 +709,7 @@ export function AttendanceCommandCenter() {
                       </div>
                       <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
                         <span className="text-[10px] text-slate-500 block font-sans">Check Out</span>
-                        <span className="text-purple-400 font-bold">{checkOut.time || 'Working'}</span>
+                        <span className="text-purple-400 font-bold">{checkOut.time || (s.status === 'ABSENT' ? '—' : 'Working')}</span>
                       </div>
                     </div>
 
