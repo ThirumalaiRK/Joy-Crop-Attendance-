@@ -33,33 +33,32 @@ export function istToUTC(value: string): string {
  */
 export function parseDeviceTimeToUTC(deviceTimeStr: string | Date): string {
   if (deviceTimeStr instanceof Date) {
-    // Extract raw date components to guarantee explicit Asia/Kolkata timezone alignment
-    const year = deviceTimeStr.getFullYear();
-    const month = deviceTimeStr.getMonth() + 1;
-    const day = deviceTimeStr.getDate();
-    const hour = deviceTimeStr.getHours();
-    const minute = deviceTimeStr.getMinutes();
-    const second = deviceTimeStr.getSeconds();
-
-    const dt = DateTime.fromObject({ year, month, day, hour, minute, second }, { zone: APP_TIMEZONE });
-    if (dt.isValid) return dt.toUTC().toISO()!;
-    return deviceTimeStr.toISOString();
+    if (!isNaN(deviceTimeStr.getTime())) {
+      return deviceTimeStr.toISOString();
+    }
+    return new Date().toISOString();
   }
 
   const str = String(deviceTimeStr).trim();
+  if (!str) return new Date().toISOString();
 
+  // If input string is ALREADY a valid ISO string (e.g. '2026-08-11T11:35:52.000Z')
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/i.test(str)) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) return d.toISOString();
+  }
+
+  // Parse raw un-timezoned hardware string e.g. "2026-08-11 17:35:52" explicitly as Asia/Kolkata local time
   let dt = DateTime.fromFormat(str, 'yyyy-MM-dd HH:mm:ss', { zone: APP_TIMEZONE });
   if (!dt.isValid) {
     dt = DateTime.fromFormat(str, "yyyy-MM-dd'T'HH:mm:ss", { zone: APP_TIMEZONE });
-  }
-  if (!dt.isValid) {
-    dt = DateTime.fromISO(str, { zone: APP_TIMEZONE });
   }
   if (dt.isValid) {
     return dt.toUTC().toISO()!;
   }
 
-  return new Date(str).toISOString();
+  const fallbackDate = new Date(str);
+  return !isNaN(fallbackDate.getTime()) ? fallbackDate.toISOString() : new Date().toISOString();
 }
 
 /**
