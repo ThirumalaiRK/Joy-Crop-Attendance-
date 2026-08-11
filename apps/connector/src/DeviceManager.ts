@@ -106,6 +106,11 @@ export class DeviceManager extends EventEmitter {
       this.emit('device_connected', { ip, port, name: cachedDeviceName });
       this.emit('device:online', { ip, port, name: cachedDeviceName });
 
+      // Automatically sync hardware clock to exact Indian Standard Time (IST)
+      device.syncTime().then((synced) => {
+        if (synced) console.log(`⏱️ [DeviceManager] Automatically synchronized ${ip} hardware clock to IST.`);
+      }).catch(() => {});
+
       // Start 10-second Heartbeat loop
       this.startHeartbeat(ip, port);
       return true;
