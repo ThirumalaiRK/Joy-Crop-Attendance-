@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Zap,
   UserPlus,
+  LogOut,
 } from 'lucide-react';
 import { NotificationBell } from './ui/notification-bell';
 
@@ -139,22 +140,41 @@ export function Header({
         </a>
 
         {/* User Profile Avatar (Clickable to open Super Admin Profile) */}
-
         <button
           onClick={onOpenAdminProfile}
           className="flex items-center gap-2 pl-2 border-l border-slate-800/80 hover:opacity-80 transition cursor-pointer text-left"
           title="Click to view Super Admin Profile"
         >
           <div className="relative">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center ring-2 ring-blue-500/40">
-              <span className="text-white text-xs font-bold">SA</span>
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center ring-2 ring-amber-500/40 shadow-sm">
+              <ShieldCheck className="w-4 h-4 text-slate-950 stroke-[2.2]" />
             </div>
             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-slate-900" />
           </div>
           <div className="hidden xl:flex flex-col text-left">
-            <span className="text-xs font-semibold text-slate-200 leading-none">Super Admin</span>
-            <span className="text-[10px] text-slate-400 mt-0.5">Administrator</span>
+            <span className="text-xs font-bold text-slate-100 leading-none">Super Admin</span>
+            <span className="text-[10px] text-amber-400 font-mono mt-0.5">256-BIT JWT</span>
           </div>
+        </button>
+
+        {/* Lock / Sign Out Button */}
+        <button
+          onClick={async () => {
+            try {
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('admin_auth_user');
+              }
+              const { supabase } = await import('@/lib/supabase');
+              await supabase.auth.signOut();
+              window.location.href = '/admin/login';
+            } catch (_) {
+              window.location.href = '/admin/login';
+            }
+          }}
+          className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 transition"
+          title="Lock Console & Sign Out Super Admin"
+        >
+          <LogOut className="w-4 h-4" />
         </button>
       </div>
     </header>

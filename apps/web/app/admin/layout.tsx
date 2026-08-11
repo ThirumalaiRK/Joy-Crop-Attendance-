@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import { AppSidebar } from "@/components/dashboard/app-sidebar";
+import { AdminAuthGuard } from "@/components/admin/admin-auth-guard";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  // AppShell already handles the layout structure
-  return <>{children}</>;
+  return <AdminAuthGuard>{children}</AdminAuthGuard>;
 }
