@@ -53,26 +53,34 @@ export async function POST(request: Request) {
       }
     }
 
-    // 2. Dual-Redundancy: Queue in Supabase device_commands for instant pickup by CommandProcessor
-    try {
-      await supabase.from('device_commands').insert([
-        {
-          device_ip: ip,
-          command_type: 'ENROLL_USER',
-          payload: {
-            uid: numericUid,
-            userId: strUserId,
-            employeeCode: strUserId,
-            name: empName,
-            fingerIndex,
-            port,
+    // 2. Queue in Supabase device_commands ONLY if all direct tunnels failed.
+    // CRITICAL: Do NOT queue when tunnel succeeded — the direct route already has a poll loop
+    // running on the connector. Queuing anyway causes a 2nd startEnrollment that resets the
+    // device mid-scan and breaks the enrollment (finger never saved).
+    if (!tunnelSuccess) {
+      try {
+        await supabase.from('device_commands').insert([
+          {
+            device_ip: ip,
+            command_type: 'ENROLL_USER',
+            payload: {
+              uid: numericUid,
+              userId: strUserId,
+              employeeCode: strUserId,
+              name: empName,
+              fingerIndex,
+              port,
+            },
+            status: 'PENDING',
+            created_at: new Date().toISOString(),
           },
-          status: 'PENDING',
-          created_at: new Date().toISOString(),
-        },
-      ]);
-    } catch (e: any) {
-      console.warn('[Enroll API] Command queue notice:', e?.message);
+        ]);
+        console.log('[Enroll API] Connector offline — queued ENROLL_USER for CommandProcessor fallback.');
+      } catch (e: any) {
+        console.warn('[Enroll API] Command queue notice:', e?.message);
+      }
+    } else {
+      console.log('[Enroll API] Direct tunnel succeeded — skipping device_commands queue to avoid double-enrollment.');
     }
 
     // 3. Mark employee enrollment status in Supabase

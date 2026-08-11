@@ -98,43 +98,95 @@ export class CommandProcessor {
 
             case 'ENROLL_USER': {
               const { uid, userId, employeeCode, name, fingerIndex } = cmd.payload;
-              const numericUid = uid || (employeeCode ? parseInt(employeeCode.replace(/\D/g, ''), 10) : 27) || 27;
+              const numericUid = uid || (employeeCode ? parseInt(String(employeeCode).replace(/\D/g, ''), 10) : 27) || 27;
               const strUserId = employeeCode || userId || `EMP${numericUid}`;
-              const empName = name || 'Employee';
+              const empName = name || userId || strUserId || 'Employee';
 
-              // STEP 1: Write User Record to Device first so screen shows name!
+              // STEP 0: Delete any old/corrupted device slot first (clean slate for re-enrollment)
+              console.log(`[CommandProcessor] ENROLL step 0 -> Clearing old data for UID ${numericUid} (${strUserId})...`);
+              try { await zkDevice.deleteUser(numericUid); } catch (_) {}
+
+              // STEP 1: Write User Record to Device (device screen shows name during scan)
               console.log(`[CommandProcessor] ENROLL step 1 -> Writing user info (Name: ${empName}) to hardware...`);
               await zkDevice.setUser(numericUid, strUserId, empName);
 
-              // STEP 2: Trigger Finger Enrollment on Device
+              // STEP 2: Snapshot device template count BEFORE enrollment starts
+              let templatesBefore = 0;
+              try {
+                const devInfo = await zkDevice.getDeviceInfo();
+                templatesBefore = devInfo.templateCount || 0;
+                console.log(`[CommandProcessor] Device template count before enrollment: ${templatesBefore}`);
+              } catch (_) {}
+
+              // STEP 3: Trigger Finger Enrollment on Device
               console.log(`[CommandProcessor] ENROLL step 2 -> Triggering finger enrollment for ${strUserId}...`);
               const enrollOk = await zkDevice.startEnrollment(strUserId, fingerIndex || 0);
-
               if (!enrollOk) {
                 throw new Error(`Hardware finger enrollment trigger failed on device ${deviceIp}`);
               }
 
-              // STEP 3: Attempt template info fetch
-              const templates = await zkDevice.getUserTemplates(numericUid);
-              if (templates && templates.length > 0) {
-                const fp = templates[0];
-                await supabase.from('fingerprint_templates').upsert({
-                  employee_code: strUserId,
-                  finger_position: 'Right Thumb',
-                  finger_template: fp.template || fp.data || 'HARDWARE_ENROLLED_TEMPLATE',
-                  quality_score: 98,
-                  updated_at: new Date().toISOString(),
+              // Notify browser UI via socket
+              deviceManager.emit('enrollment_started', {
+                ip: deviceIp,
+                userId: strUserId,
+                status: `👉 Place ${empName}'s finger on the Identix K90 Pro terminal now! (3 scans required)`,
+              });
+
+              // STEP 4: Poll device for template count increase (max 60 seconds)
+              // node-zklib has no real-time callback for enrollment, so we detect via template count delta.
+              const POLL_MS = 2500;
+              const MAX_POLLS = 24; // 24 × 2.5s = 60s
+              let polls = 0;
+              let enrolled = false;
+
+              while (polls < MAX_POLLS && !enrolled) {
+                await new Promise((r) => setTimeout(r, POLL_MS));
+                polls++;
+
+                try {
+                  const devInfo = await zkDevice.getDeviceInfo();
+                  const templatesNow = devInfo.templateCount || 0;
+                  if (templatesNow > templatesBefore) {
+                    enrolled = true;
+                    console.log(`[CommandProcessor] ✅ Template count increased ${templatesBefore} → ${templatesNow} — finger captured!`);
+                    break;
+                  }
+                } catch (_) {}
+
+                const secsLeft = Math.round(((MAX_POLLS - polls) * POLL_MS) / 1000);
+                deviceManager.emit('enrollment_started', {
+                  ip: deviceIp,
+                  userId: strUserId,
+                  status: `Waiting for finger scan... (${secsLeft}s remaining)`,
                 });
               }
 
-              resultData = {
-                success: true,
-                uid: numericUid,
-                userId: strUserId,
-                name: empName,
-                status: 'Enrolled',
-                message: `Successfully provisioned ${empName} (${strUserId}) on Identix K90 Pro!`,
-              };
+              if (enrolled) {
+                // Update employee enrolled status
+                try {
+                  await supabase
+                    .from('employees')
+                    .update({ fingerprint_enrolled: true, is_enrolled: true, updated_at: new Date().toISOString() })
+                    .or(`employee_code.eq.${strUserId},device_user_id.eq.${strUserId}`);
+                } catch (_) {}
+
+                deviceManager.emit('enrollment_success', {
+                  ip: deviceIp,
+                  userId: strUserId,
+                  status: 'Saved',
+                  fingerIndex: fingerIndex || 0,
+                  uid: numericUid,
+                });
+                console.log(`[CommandProcessor] ✅ ENROLL_USER success for ${empName} (${strUserId})`);
+                resultData = { success: true, uid: numericUid, userId: strUserId, name: empName, status: 'Enrolled' };
+              } else {
+                deviceManager.emit('enrollment_failed', {
+                  ip: deviceIp,
+                  userId: strUserId,
+                  status: 'Timeout — no finger detected in 60s',
+                });
+                throw new Error(`Enrollment timeout — ${empName} did not place finger within 60 seconds. Please try again.`);
+              }
               break;
             }
 

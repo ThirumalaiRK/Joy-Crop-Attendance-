@@ -57,10 +57,14 @@ export class AttendanceProcessor {
 
     console.log(`\n⚙️ [AttendanceProcessor] Processing raw punch for User ID "${rawUserIdStr}" at ${timeStrIST} IST (${raw.device_ip})`);
 
-    // ─── GUARD 1: Reject unenrolled "finger 0" / user ID 0 ────────────────────
-    if (rawUserIdStr === '0' || rawUserIdStr === '' || rawUserIdStr === 'NaN') {
-      console.warn(`🚫 [AttendanceProcessor] Rejected punch from unenrolled finger (User ID "${rawUserIdStr}"). This is a ZKTeco dummy record — place a valid enrolled finger.`);
-      return { status: 'REJECTED', reason: 'UNENROLLED_FINGER_0' };
+    // ─── GUARD 1: Reject unenrolled, empty, or garbage user IDs ───────────────
+    // Also rejects control characters like ␦ (U+2406, ASCII 0x06) that the ZKTeco
+    // device sends when a user record was deleted from Supabase but not wiped from
+    // the hardware — the slot becomes corrupted and triggers these junk punches.
+    const isPrintableAscii = /^[\x21-\x7E]+$/.test(rawUserIdStr);
+    if (!rawUserIdStr || rawUserIdStr === '0' || rawUserIdStr === 'NaN' || !isPrintableAscii) {
+      console.warn(`🚫 [AttendanceProcessor] Rejected garbage punch (User ID "${rawUserIdStr}" = non-printable/control character). Delete this user from device hardware to stop these — use Admin → Device → Clear Users or device/users/delete.`);
+      return { status: 'REJECTED', reason: 'GARBAGE_USER_ID', raw: rawUserIdStr };
     }
 
     // ─── GUARD 2: Reject timestamps > 24 hours in the future ─────────────────

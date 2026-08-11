@@ -366,12 +366,13 @@ export function AdminEmployees() {
       setEnrollMsg(`✅ Fingerprint template for ${enrollEmp?.name || 'employee'} successfully enrolled & saved to Identix K90 Pro terminal memory!`);
       toast.success(`🎉 Fingerprint enrolled for ${enrollEmp?.name}!`);
       load(); // Refresh table so FP status icon turns green
-    } else if (st.includes('waiting') || st.includes('place finger')) {
-      setEnrollStatus('waiting');
-      setEnrollMsg(enrollmentStatus.status);
     } else if (st.includes('failed') || st.includes('timeout') || st.includes('error')) {
       setEnrollStatus('error');
       setEnrollMsg(`❌ ${enrollmentStatus.status}`);
+    } else if (enrollmentStatus.status) {
+      // Any other progress message: "Place right thumb on device", "Waiting for scan...", etc.
+      setEnrollStatus('waiting');
+      setEnrollMsg(enrollmentStatus.status);
     }
   }, [enrollmentStatus, enrollModalOpen]);
 

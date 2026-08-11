@@ -121,12 +121,18 @@ export function EnrollmentWizard({ onEmployeeEnrolled }: EnrollmentWizardProps) 
   useEffect(() => {
     if (!enrollmentStatus || !activeFingerKey) return;
     
-    // Ignore events not for the current employee
-    if (enrollmentStatus.userId && enrollmentStatus.userId !== employeeCode) return;
+    // Filter by userId only if present AND numeric part doesn't match this employee
+    // (prevents strict string mismatch like "EMP-154" vs "EMP-000154" blocking all messages)
+    if (enrollmentStatus.userId) {
+      const evtNum = parseInt(String(enrollmentStatus.userId).replace(/\D/g, ''), 10);
+      const myNum  = parseInt(String(employeeCode).replace(/\D/g, ''), 10);
+      if (!isNaN(evtNum) && !isNaN(myNum) && evtNum !== myNum) return;
+    }
 
     const status: string = enrollmentStatus.status || '';
+    const stLower = status.toLowerCase();
 
-    if (status === 'Saved') {
+    if (stLower.includes('saved') || stLower.includes('success')) {
       // Real finger captured and saved on device
       playSuccessChime();
       setFingerProgress((prev) => ({
@@ -135,10 +141,10 @@ export function EnrollmentWizard({ onEmployeeEnrolled }: EnrollmentWizardProps) 
       }));
       setActiveFingerKey(null);
     } else if (
-      status.toLowerCase().includes('fail') ||
-      status.toLowerCase().includes('reject') ||
-      status.toLowerCase().includes('error') ||
-      status.toLowerCase().includes('timeout')
+      stLower.includes('fail') ||
+      stLower.includes('reject') ||
+      stLower.includes('error') ||
+      stLower.includes('timeout')
     ) {
       // Device rejected or error — reset so user can retry
       setFingerProgress((prev) => ({
@@ -147,7 +153,7 @@ export function EnrollmentWizard({ onEmployeeEnrolled }: EnrollmentWizardProps) 
       }));
       setActiveFingerKey(null);
     } else {
-      // Progress status: "Place finger on device terminal", "Ready — waiting...", etc.
+      // Progress: "Place finger on device terminal", "Waiting for scan...", etc.
       setFingerProgress((prev) => ({
         ...prev,
         [activeFingerKey]: { ...prev[activeFingerKey], status: 'scanning', message: status }
