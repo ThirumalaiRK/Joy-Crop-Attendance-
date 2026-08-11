@@ -327,6 +327,19 @@ function getISTMinutes(d: Date): number {
 
 // ─── TIME CALCULATION ENGINE ─────────────────────────────────────────────────
 
+// Auto-detect unadjusted UTC hardware stamps (01:00 AM - 06:30 AM in IST) and shift +5h30m to IST
+function normalizeEventTime(eventTime: string | Date): Date {
+  const d = new Date(eventTime);
+  const istHour = parseInt(
+    d.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: false, hour: 'numeric' }),
+    10
+  );
+  if (istHour >= 1 && istHour < 7) {
+    return new Date(d.getTime() + 330 * 60 * 1000);
+  }
+  return d;
+}
+
 export function calculateNetSummaryForEvents(
   employeeId: string,
   employeeName: string,
@@ -350,31 +363,32 @@ export function calculateNetSummaryForEvents(
   let checkInTimeStr = '—';
   let checkOutTimeStr = '—';
 
-  const sessionDateStr = checkInEvt?.eventTime
-    ? new Date(checkInEvt.eventTime).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+  const checkInDate = checkInEvt?.eventTime ? normalizeEventTime(checkInEvt.eventTime) : null;
+  const checkOutDate = checkOutEvt?.eventTime ? normalizeEventTime(checkOutEvt.eventTime) : null;
+
+  const sessionDateStr = checkInDate
+    ? checkInDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
     : TODAY_STR;
   const isTodaySession = sessionDateStr === TODAY_STR;
 
-  if (checkInEvt?.eventTime) {
-    const d = new Date(checkInEvt.eventTime);
-    const dateLabel = d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: '2-digit' });
-    const timeLabel = d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  if (checkInDate) {
+    const dateLabel = checkInDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: '2-digit' });
+    const timeLabel = checkInDate.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
     checkInTimeStr = `${dateLabel} • ${timeLabel}`;
   }
 
-  if (checkOutEvt?.eventTime) {
-    const d = new Date(checkOutEvt.eventTime);
-    const dateLabel = d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: '2-digit' });
-    const timeLabel = d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  if (checkOutDate) {
+    const dateLabel = checkOutDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: '2-digit' });
+    const timeLabel = checkOutDate.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
     checkOutTimeStr = `${dateLabel} • ${timeLabel}`;
   }
 
-  if (checkInEvt && checkOutEvt) {
-    const startMs = new Date(checkInEvt.eventTime).getTime();
-    const endMs = new Date(checkOutEvt.eventTime).getTime();
+  if (checkInDate && checkOutDate) {
+    const startMs = checkInDate.getTime();
+    const endMs = checkOutDate.getTime();
     totalTimeMinutes = Math.max(0, Math.round((endMs - startMs) / (1000 * 60)));
-  } else if (checkInEvt) {
-    const startMs = new Date(checkInEvt.eventTime).getTime();
+  } else if (checkInDate) {
+    const startMs = checkInDate.getTime();
     // If not today, cap at shift end (8 hours), never calculate 24h into next days!
     const endMs = isTodaySession ? Date.now() : (startMs + (shiftRule.minWorkingHours || 8) * 60 * 60 * 1000);
     totalTimeMinutes = Math.max(0, Math.round((endMs - startMs) / (1000 * 60)));
@@ -481,8 +495,8 @@ export function calculateNetSummaryForEvents(
 
   // 6. Late Minutes Calculation (09:00 AM + 5 mins grace = 09:05 AM)
   let lateMinutes = 0;
-  if (checkInEvt) {
-    const checkInISTMins = getISTMinutes(new Date(checkInEvt.eventTime));
+  if (checkInDate) {
+    const checkInISTMins = getISTMinutes(checkInDate);
     const shiftInMins = 9 * 60; // 09:00 AM
     const graceMins = 5;
     if (checkInISTMins > shiftInMins + graceMins) {
@@ -496,8 +510,8 @@ export function calculateNetSummaryForEvents(
 
   // 8. Early Exit Minutes Calculation (04:00 PM / 16:00)
   let earlyExitMinutes = 0;
-  if (checkOutEvt) {
-    const checkOutISTMins = getISTMinutes(new Date(checkOutEvt.eventTime));
+  if (checkOutDate) {
+    const checkOutISTMins = getISTMinutes(checkOutDate);
     const shiftOutMins = 16 * 60; // 04:00 PM (16:00)
     const earlyGraceMins = 5;
     if (checkOutISTMins < shiftOutMins - earlyGraceMins) {
