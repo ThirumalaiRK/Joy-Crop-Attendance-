@@ -384,8 +384,15 @@ export function AdminEmployees() {
     setEnrollStatus('starting');
     setEnrollMsg('Connecting to Identix K90 Pro Terminal (192.168.1.56:4370)...');
 
-    const code = emp.employeeCode || emp.id;
-    const numericUid = parseInt(String(code).replace(/\D/g, ''), 10) || 10;
+    const rawCode = emp.employee_code || emp.employeeCode || emp.id;
+    let code = rawCode;
+    const numMatch = String(rawCode).match(/\d+/);
+    if (numMatch && !/^[0-9a-f]{8}-/i.test(String(rawCode))) {
+      code = `EMP-${String(parseInt(numMatch[0], 10)).padStart(2, '0')}`;
+    } else if (emp.device_uid) {
+      code = `EMP-${String(emp.device_uid).padStart(2, '0')}`;
+    }
+    const numericUid = emp.device_uid || (numMatch ? parseInt(numMatch[0], 10) : (parseInt(String(code).replace(/\D/g, ''), 10) % 65535 || 10));
 
     try {
       // Use same-origin Next.js server route (eliminates Mixed-Content / CORS blocks in production Vercel)
@@ -419,17 +426,19 @@ export function AdminEmployees() {
       setEnrollStatus('waiting');
       setEnrollMsg(data.message || '👉 Place ' + emp.name + '\'s finger on the hardware scanner terminal now! (3 scans on Identix K90 Pro)');
 
-      // Update Supabase to mark fingerprint_enrolled = true
+      // Update Supabase to mark fingerprint_enrolled = true and save hardware UID mapping
       try {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(code));
-        const q = supabase
+        await supabase
           .from('employees')
-          .update({ fingerprint_enrolled: true, is_enrolled: true, status: 'Active' });
-        if (isUuid) {
-          await q.or(`id.eq.${code},employee_code.eq.${code}`);
-        } else {
-          await q.eq('employee_code', code);
-        }
+          .update({
+            fingerprint_enrolled: true,
+            is_enrolled: true,
+            status: 'Active',
+            device_uid: numericUid,
+            device_user_id: code,
+            updated_at: new Date().toISOString(),
+          })
+          .or(`id.eq.${emp.id},employee_code.eq.${code}`);
       } catch (_) {}
 
     } catch (err: any) {

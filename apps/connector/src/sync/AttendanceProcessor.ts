@@ -205,8 +205,8 @@ export class AttendanceProcessor {
       cleanId,
     ];
 
-    // 2. Fallback search in employees table
-    const orClauses = codeVariants.map(v => `employee_code.eq.${v},device_user_id.eq.${v}`).join(',');
+    // 2. Fallback search in employees table (checking employee_code, device_user_id, and numeric device_uid)
+    const orClauses = codeVariants.map(v => `employee_code.eq.${v},device_user_id.eq.${v}`).join(',') + `,device_uid.eq.${numericUid}`;
     const { data: emps } = await supabase
       .from('employees')
       .select('*')
