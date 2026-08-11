@@ -342,13 +342,18 @@ export function calculateNetSummaryForEvents(
     sorted.find((e) => (e.eventType as string) === 'RAW_PUNCH') ||
     sorted[0];
   
-  // checkOutEvt is ONLY set if the employee's LAST event today is CHECK_OUT
-  const isCurrentlyCheckedOut = lastEvent?.eventType === 'CHECK_OUT';
-  const checkOutEvt = isCurrentlyCheckedOut ? lastEvent : undefined;
+  // checkOutEvt is the latest CHECK_OUT event in this session
+  const checkOutEvt = sorted.slice().reverse().find((e) => e.eventType === 'CHECK_OUT');
+  const isCurrentlyCheckedOut = Boolean(checkOutEvt);
 
   let totalTimeMinutes = 0;
   let checkInTimeStr = '—';
   let checkOutTimeStr = '—';
+
+  const sessionDateStr = checkInEvt?.eventTime
+    ? new Date(checkInEvt.eventTime).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+    : TODAY_STR;
+  const isTodaySession = sessionDateStr === TODAY_STR;
 
   if (checkInEvt?.eventTime) {
     const d = new Date(checkInEvt.eventTime);
@@ -370,8 +375,9 @@ export function calculateNetSummaryForEvents(
     totalTimeMinutes = Math.max(0, Math.round((endMs - startMs) / (1000 * 60)));
   } else if (checkInEvt) {
     const startMs = new Date(checkInEvt.eventTime).getTime();
-    const nowMs = Date.now();
-    totalTimeMinutes = Math.max(0, Math.round((nowMs - startMs) / (1000 * 60)));
+    // If not today, cap at shift end (8 hours), never calculate 24h into next days!
+    const endMs = isTodaySession ? Date.now() : (startMs + (shiftRule.minWorkingHours || 8) * 60 * 60 * 1000);
+    totalTimeMinutes = Math.max(0, Math.round((endMs - startMs) / (1000 * 60)));
   }
 
   // 1. Calculate Explicit Tea/Coffee Breaks
@@ -546,12 +552,12 @@ export function calculateNetSummaryForEvents(
   };
 
   return {
-    id: `sum-${employeeId}-${TODAY_STR}`,
+    id: `sum-${employeeId}-${sessionDateStr}`,
     employeeId,
     employeeCode: employeeId,
     employeeName,
     department,
-    date: TODAY_STR,
+    date: sessionDateStr,
     checkInTime: checkInTimeStr,
     checkOutTime: checkOutTimeStr,
     totalTimeMinutes,
