@@ -54,11 +54,9 @@ export async function POST(request: Request) {
     }
 
     // 2. Dual-Redundancy: Queue in Supabase device_commands for instant pickup by CommandProcessor
-    const cmdId = `CMD-ENROLL-${strUserId}-${Date.now()}`;
     try {
       await supabase.from('device_commands').insert([
         {
-          id: cmdId,
           device_ip: ip,
           command_type: 'ENROLL_USER',
           payload: {

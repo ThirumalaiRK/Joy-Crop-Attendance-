@@ -134,17 +134,27 @@ export class ZKTecoDevice extends EventEmitter implements IBiometricDevice {
 
   async startEnrollment(userId: string, fingerIndex: number = 0): Promise<boolean> {
     try {
-      // Cancel active sensor loop first to ensure hardware accepts enrollment trigger
+      // 1. Cancel active sensor loop first to ensure hardware accepts enrollment trigger
       try {
         await this.device.executeCmd(60, ''); // CMD_CANCELCAPTURE
       } catch (_) { }
 
+      const numericUid = parseInt(String(userId).replace(/\D/g, ''), 10) || 1;
+
+      // 2. Format A: 4-byte buffer (Numeric UID + Finger Index)
+      try {
+        const numBuf = Buffer.alloc(4);
+        numBuf.writeUInt16LE(numericUid, 0);
+        numBuf.writeUInt8(fingerIndex, 2);
+        await this.device.executeCmd(61, numBuf); // CMD_STARTENROLL
+      } catch (_) {}
+
+      // 3. Format B: 25-byte buffer (String UserID ASCII + Finger Index at byte 24)
       const buffer = Buffer.alloc(25);
       buffer.write(String(userId), 0, 'ascii');
       buffer.writeUInt8(fingerIndex, 24);
+      await this.device.executeCmd(61, buffer); // CMD_STARTENROLL
 
-      const CMD_STARTENROLL = 61;
-      await this.device.executeCmd(CMD_STARTENROLL, buffer);
       return true;
     } catch (error) {
       console.error(`Failed to start enrollment on ${this.ip}`, error);
