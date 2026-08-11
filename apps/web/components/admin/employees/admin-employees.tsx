@@ -386,14 +386,14 @@ export function AdminEmployees() {
   const handleStartHardwareEnrollment = async () => {
     if (!enrollEmp) return;
     setEnrollStatus('starting');
-    setEnrollMsg('Connecting to Identix K90 Pro Terminal (192.168.1.56:4370) over TCP...');
+    setEnrollMsg('Connecting to Identix K90 Pro Terminal (192.168.1.56:4370)...');
 
     const code = enrollEmp.employeeCode || enrollEmp.id;
     const numericUid = parseInt(code.replace(/\D/g, ''), 10) || 10;
 
-    const connectorUrl = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
     try {
-      const res = await fetch(`${connectorUrl}/api/device/enroll`, {
+      // Use same-origin Next.js server route (eliminates Mixed-Content / CORS blocks in production Vercel)
+      const res = await fetch('/api/admin/device/enroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -411,7 +411,7 @@ export function AdminEmployees() {
         data = await res.json();
       } catch (_) {}
 
-      if (!res.ok) {
+      if (!res.ok || data.status === 'error') {
         throw new Error(
           data.error ||
           (res.status === 400
