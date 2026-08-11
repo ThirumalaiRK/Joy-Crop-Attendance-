@@ -173,14 +173,19 @@ export class DeviceManager extends EventEmitter {
     return result;
   }
 
+  private missedPings: Map<string, number> = new Map();
+
   private startHeartbeat(ip: string, port: number) {
     this.stopHeartbeat(ip);
+    this.missedPings.set(ip, 0);
+
     const interval = setInterval(async () => {
       const device = this.devices.get(ip);
       if (!device || device.connectionState !== 'ONLINE') return;
 
       try {
         const latency = await device.ping();
+        this.missedPings.set(ip, 0); // Reset failure counter on success
 
         // Always update in-memory RAM cache (cheap, instant)
         const now = new Date().toISOString();
@@ -199,41 +204,27 @@ export class DeviceManager extends EventEmitter {
           lastHeartbeat: now,
         });
 
-        // Throttle Supabase DB writes to max once per 30s
+        // Throttle Supabase DB writes to max once per 60s
         const lastWrite = this.lastDbWriteTime.get(ip) ?? 0;
         const nowMs = Date.now();
-        if (nowMs - lastWrite >= DeviceManager.DB_WRITE_THROTTLE_MS) {
+        if (nowMs - lastWrite >= 60_000) {
           this.lastDbWriteTime.set(ip, nowMs);
-          // Fetch full device info only when writing to DB
-          const rawInfo = await device.getDeviceInfo().catch(() => null) as any;
-          const cached = deviceCache.get(ip);
-          // Update RAM cache, falling back to existing cached values for any missing field
-          deviceCache.set({
-            ip, port,
-            sn: rawInfo?.sn ?? cached?.sn,
-            name: rawInfo?.deviceName ?? cached?.name ?? `Identix Terminal (${ip})`,
-            model: rawInfo?.platform ?? cached?.model,
-            firmware: rawInfo?.firmware ?? cached?.firmware,
-            mac: rawInfo?.mac ?? cached?.mac,
-            status: 'ONLINE',
-            latency_ms: latency,
-            userCount: rawInfo?.userCount ?? cached?.userCount ?? 0,
-            templateCount: rawInfo?.templateCount ?? cached?.templateCount ?? 0,
-            memoryUsage: rawInfo?.memoryUsage ?? cached?.memoryUsage,
-            lastHeartbeat: now,
-          });
-          this.updateDeviceStatusDB(ip, port, rawInfo, 'online').catch(() => {});
+          this.updateDeviceStatusDB(ip, port, null, 'online').catch(() => {});
         }
 
-
-        // Always emit heartbeat event (index.ts throttles what gets sent to browsers)
+        // Always emit heartbeat event
         this.emit('heartbeat', { ip, latency_ms: latency, lastHeartbeat: now });
       } catch (err: any) {
-        console.warn(`⚠️ [DeviceManager] Heartbeat ping timeout for ${ip}`);
-        deviceCache.updateStatus(ip, 'ERROR');
-        this.scheduleReconnect(ip, port);
+        const failures = (this.missedPings.get(ip) || 0) + 1;
+        this.missedPings.set(ip, failures);
+
+        if (failures >= 3) {
+          console.warn(`⚠️ [DeviceManager] 3 consecutive missed pings for ${ip} -> Reconnecting socket...`);
+          deviceCache.updateStatus(ip, 'ERROR');
+          this.scheduleReconnect(ip, port);
+        }
       }
-    }, 10_000); // Ping every 10s for accurate latency; DB writes throttled to 30s
+    }, 30_000); // Relaxed industrial heartbeat interval (30s)
 
     this.heartbeatIntervals.set(ip, interval);
   }

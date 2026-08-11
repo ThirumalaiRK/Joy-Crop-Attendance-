@@ -13,8 +13,8 @@ import { getAttendanceDayRange, parseDeviceTimeToUTC, utcToIST } from "../timezo
 const lastProcessedTime = new Map<string, number>(); // ip -> epoch ms
 
 export const startSyncEngine = () => {
-  // Every 30 seconds — SYNC ONLY. NO TCP connections opened here.
-  cron.schedule("*/30 * * * * *", async () => {
+  // Every 60 seconds — Reconciliation only (Real-time TCP Push handles live punches instantly in <5ms)
+  cron.schedule("*/60 * * * * *", async () => {
     const deviceRepo = AppDataSource.getRepository(DeviceCache);
     const attendanceRepo = AppDataSource.getRepository(AttendanceCache);
     const userRepo = AppDataSource.getRepository(UserCache);
@@ -22,16 +22,12 @@ export const startSyncEngine = () => {
     const devices = await deviceRepo.find({ where: { online: true } });
     if (devices.length === 0) return;
 
-    console.log(`[SyncEngine] Delta sync tick — ${devices.length} device(s) tracked.`);
-
     for (const dev of devices) {
       try {
         // Re-use the EXISTING persistent TCP socket owned by DeviceManager.
-        // NEVER create new ZKTecoDevice here — that causes duplicate connections.
         const device = deviceManager.getConnectedDevice(dev.ip);
 
         if (!device || (device as any).connectionState !== "ONLINE") {
-          console.log(`[SyncEngine] Skipping ${dev.ip} — not ONLINE in DeviceManager.`);
           continue;
         }
 

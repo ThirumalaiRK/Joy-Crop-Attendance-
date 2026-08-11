@@ -222,12 +222,11 @@ export function EnrollmentWizard({ onEmployeeEnrolled }: EnrollmentWizardProps) 
     const fingerIndex = FINGER_INDEX_MAP[fingerKey] ?? 0;
 
     try {
-      const CONNECTOR_URL = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
-      const res = await fetch(`${CONNECTOR_URL}/api/device/enroll`, {
+      const res = await fetch('/api/admin/device/enroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ip: deviceIp,
+          ip: deviceIp || '192.168.1.56',
           port: 4370,
           uid: numericUid,          // numeric device UID
           userId: employeeCode,     // employee code stored as device UserID

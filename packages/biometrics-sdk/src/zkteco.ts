@@ -72,52 +72,62 @@ export class ZKTecoDevice extends EventEmitter implements IBiometricDevice {
     }
   }
 
+  private commandQueue: Promise<any> = Promise.resolve();
+
+  private async withLock<T>(operation: () => Promise<T>): Promise<T> {
+    const res = this.commandQueue.then(() => operation(), () => operation());
+    this.commandQueue = res.catch(() => {});
+    return res;
+  }
+
   async getAttendanceLogs(): Promise<AttendanceLog[]> {
-    try {
-      const attendances = await this.device.getAttendances();
-      if (!attendances || !attendances.data) return [];
-      return attendances.data || [];
-    } catch (error: any) {
-      console.warn(`⚠️ [ZKTecoDevice] Notice getting attendance logs from ${this.ip}:`, error?.message || error);
-      // Auto-reconnect if socket desynchronized or timed out
-      if (error?.message?.includes('TIMEOUT') || error?.message?.includes('subarray') || error?.err?.message?.includes('TIMEOUT')) {
-        try {
-          await this.disconnect();
-          await this.connect();
-        } catch (_) {}
+    if (this.connectionState !== 'ONLINE') return [];
+    return this.withLock(async () => {
+      try {
+        const attendances = await this.device.getAttendances();
+        if (!attendances || !attendances.data) return [];
+        return attendances.data || [];
+      } catch (error: any) {
+        console.warn(`⚠️ [ZKTecoDevice] Notice getting attendance logs from ${this.ip}:`, error?.message || error);
+        return [];
       }
-      return [];
-    }
+    });
   }
 
   async clearAttendanceLogs(): Promise<boolean> {
-    try {
-      await this.device.clearAttendanceLog();
-      return true;
-    } catch (error) {
-      console.error(`Failed to clear attendance logs from ${this.ip}`, error);
-      return false;
-    }
+    return this.withLock(async () => {
+      try {
+        await this.device.clearAttendanceLog();
+        return true;
+      } catch (error) {
+        console.error(`Failed to clear attendance logs from ${this.ip}`, error);
+        return false;
+      }
+    });
   }
 
   async clearUsers(): Promise<boolean> {
-    try {
-      await this.device.clearData();
-      return true;
-    } catch (error) {
-      console.error(`Failed to clear users from ${this.ip}`, error);
-      return false;
-    }
+    return this.withLock(async () => {
+      try {
+        await this.device.clearData();
+        return true;
+      } catch (error) {
+        console.error(`Failed to clear users from ${this.ip}`, error);
+        return false;
+      }
+    });
   }
 
-  async executeCmd(command: number, data: string = ''): Promise<boolean> {
-    try {
-      await this.device.executeCmd(command, data);
-      return true;
-    } catch (error) {
-      console.error(`Failed to execute cmd ${command} on ${this.ip}`, error);
-      return false;
-    }
+  async executeCmd(command: number, data: string | Buffer = ''): Promise<boolean> {
+    return this.withLock(async () => {
+      try {
+        await this.device.executeCmd(command, data);
+        return true;
+      } catch (error) {
+        console.error(`Failed to execute cmd ${command} on ${this.ip}`, error);
+        return false;
+      }
+    });
   }
 
   async enableRealTimeLogs(): Promise<boolean> {
@@ -133,33 +143,57 @@ export class ZKTecoDevice extends EventEmitter implements IBiometricDevice {
   }
 
   async startEnrollment(userId: string, fingerIndex: number = 0): Promise<boolean> {
-    try {
-      // 1. Cancel active sensor loop first to ensure hardware accepts enrollment trigger
+    return this.withLock(async () => {
       try {
-        await this.device.executeCmd(60, ''); // CMD_CANCELCAPTURE
-      } catch (_) { }
+        // 1. Cancel active sensor loop first to ensure hardware accepts enrollment trigger
+        try {
+          await this.device.executeCmd(60, ''); // CMD_CANCELCAPTURE
+          await new Promise((r) => setTimeout(r, 250));
+        } catch (_) { }
 
-      const numericUid = parseInt(String(userId).replace(/\D/g, ''), 10) || 1;
+        const numericUid = parseInt(String(userId).replace(/\D/g, ''), 10) || 1;
 
-      // 2. Format A: 4-byte buffer (Numeric UID + Finger Index)
-      try {
-        const numBuf = Buffer.alloc(4);
-        numBuf.writeUInt16LE(numericUid, 0);
-        numBuf.writeUInt8(fingerIndex, 2);
-        await this.device.executeCmd(61, numBuf); // CMD_STARTENROLL
-      } catch (_) {}
+        // 2. Format A: 3-byte buffer (2-byte UInt16LE UID + 1-byte Finger Index)
+        try {
+          const buf3 = Buffer.alloc(3);
+          buf3.writeUInt16LE(numericUid, 0);
+          buf3.writeUInt8(fingerIndex, 2);
+          const ok3 = await this.device.executeCmd(61, buf3);
+          if (ok3 !== false) {
+            console.log(`✅ [ZKTecoDevice] CMD_STARTENROLL (3-byte) succeeded for UID ${numericUid}, finger ${fingerIndex}`);
+            return true;
+          }
+        } catch (e: any) {
+          console.warn(`[ZKTecoDevice] Format A (3-byte) notice: ${e?.message}`);
+        }
 
-      // 3. Format B: 25-byte buffer (String UserID ASCII + Finger Index at byte 24)
-      const buffer = Buffer.alloc(25);
-      buffer.write(String(userId), 0, 'ascii');
-      buffer.writeUInt8(fingerIndex, 24);
-      await this.device.executeCmd(61, buffer); // CMD_STARTENROLL
+        // 3. Format B: 5-byte buffer (4-byte UInt32LE UID + 1-byte Finger Index)
+        try {
+          const buf5 = Buffer.alloc(5);
+          buf5.writeUInt32LE(numericUid, 0);
+          buf5.writeUInt8(fingerIndex, 4);
+          const ok5 = await this.device.executeCmd(61, buf5);
+          if (ok5 !== false) {
+            console.log(`✅ [ZKTecoDevice] CMD_STARTENROLL (5-byte) succeeded for UID ${numericUid}, finger ${fingerIndex}`);
+            return true;
+          }
+        } catch (e: any) {
+          console.warn(`[ZKTecoDevice] Format B (5-byte) notice: ${e?.message}`);
+        }
 
-      return true;
-    } catch (error) {
-      console.error(`Failed to start enrollment on ${this.ip}`, error);
-      return false;
-    }
+        // 4. Format C: 25-byte buffer (24-byte ASCII UserID + 1-byte Finger Index at byte 24)
+        const buf25 = Buffer.alloc(25);
+        buf25.write(String(userId), 0, 'ascii');
+        buf25.writeUInt8(fingerIndex, 24);
+        await this.device.executeCmd(61, buf25);
+        console.log(`✅ [ZKTecoDevice] CMD_STARTENROLL (25-byte) sent for UserID ${userId}, finger ${fingerIndex}`);
+
+        return true;
+      } catch (error) {
+        console.error(`Failed to start enrollment on ${this.ip}`, error);
+        return false;
+      }
+    });
   }
 
   async setUser(uid: number, userid: string, name: string, password = '', role = 0, cardno = 0): Promise<boolean> {

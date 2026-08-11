@@ -34,15 +34,16 @@ export default function EnrollmentPage() {
 
   const handleEnroll = async () => {
     setEnrollmentStatus('Waiting');
-    const connectorUrl = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
     try {
-      const res = await fetch(`${connectorUrl}/api/device/enroll`, {
+      const res = await fetch('/api/admin/device/enroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employeeId: employee.id,
-          name: employee.name,
-          deviceIp: '192.168.1.56'
+          uid: parseInt(employee.code.replace(/\D/g, ''), 10) || 1,
+          userId: employee.code,
+          userName: employee.name,
+          ip: '192.168.1.56',
+          port: 4370,
         })
       });
       if (!res.ok) throw new Error('Failed to start enrollment');

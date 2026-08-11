@@ -375,21 +375,16 @@ export function AdminEmployees() {
     }
   }, [enrollmentStatus, enrollModalOpen]);
 
-  const openEnrollModal = (emp: Employee) => {
-    setEnrollEmp(emp);
-    setSelectedFinger(0);
-    setEnrollStatus('idle');
-    setEnrollMsg('');
-    setEnrollModalOpen(true);
-  };
+  const handleStartHardwareEnrollment = async (overrideEmp?: any, overrideFinger?: number) => {
+    const emp = overrideEmp || enrollEmp;
+    const fingerIdx = overrideFinger !== undefined ? overrideFinger : selectedFinger;
+    if (!emp) return;
 
-  const handleStartHardwareEnrollment = async () => {
-    if (!enrollEmp) return;
     setEnrollStatus('starting');
     setEnrollMsg('Connecting to Identix K90 Pro Terminal (192.168.1.56:4370)...');
 
-    const code = enrollEmp.employeeCode || enrollEmp.id;
-    const numericUid = parseInt(code.replace(/\D/g, ''), 10) || 10;
+    const code = emp.employeeCode || emp.id;
+    const numericUid = parseInt(String(code).replace(/\D/g, ''), 10) || 10;
 
     try {
       // Use same-origin Next.js server route (eliminates Mixed-Content / CORS blocks in production Vercel)
@@ -401,8 +396,8 @@ export function AdminEmployees() {
           port: 4370,
           uid: numericUid,
           userId: code,
-          userName: enrollEmp.name,
-          fingerIndex: selectedFinger,
+          userName: emp.name,
+          fingerIndex: fingerIdx,
         }),
       });
 
@@ -421,11 +416,11 @@ export function AdminEmployees() {
       }
 
       setEnrollStatus('waiting');
-      setEnrollMsg(data.message || '👉 Place ' + enrollEmp.name + '\'s finger on the hardware scanner terminal now! (3 scans)');
+      setEnrollMsg(data.message || '👉 Place ' + emp.name + '\'s finger on the hardware scanner terminal now! (3 scans on Identix K90 Pro)');
 
       // Update Supabase to mark fingerprint_enrolled = true
       try {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(code);
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(code));
         const q = supabase
           .from('employees')
           .update({ fingerprint_enrolled: true, is_enrolled: true, status: 'Active' });
@@ -439,6 +434,25 @@ export function AdminEmployees() {
     } catch (err: any) {
       setEnrollStatus('error');
       setEnrollMsg(err.message || 'Could not communicate with hardware device over TCP socket.');
+    }
+  };
+
+  const openEnrollModal = (emp: any) => {
+    setEnrollEmp(emp);
+    setSelectedFinger(0);
+    setEnrollStatus('idle');
+    setEnrollMsg('');
+    setEnrollModalOpen(true);
+    // Auto-trigger hardware TCP enrollment command immediately on modal open!
+    handleStartHardwareEnrollment(emp, 0);
+  };
+
+  const handleOpenEnrollModal = openEnrollModal;
+
+  const handleSelectFinger = (fingerIdx: number) => {
+    setSelectedFinger(fingerIdx);
+    if (enrollEmp) {
+      handleStartHardwareEnrollment(enrollEmp, fingerIdx);
     }
   };
 
@@ -1335,7 +1349,7 @@ export function AdminEmployees() {
                   ].map((f) => (
                     <button
                       key={f.idx}
-                      onClick={() => setSelectedFinger(f.idx)}
+                      onClick={() => handleSelectFinger(f.idx)}
                       className={clsx(
                         'px-3 py-2 rounded-xl text-xs font-semibold border transition text-left flex items-center justify-between',
                         selectedFinger === f.idx
