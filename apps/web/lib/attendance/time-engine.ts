@@ -176,6 +176,12 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
         function buildISOFromDisplayTime(displayTime: string, fallbackIso: string): string {
           if (!displayTime || displayTime === '—' || displayTime === '-') return fallbackIso;
           try {
+            // If displayTime is already a valid ISO timestamp, parse directly
+            if (/^\d{4}-\d{2}-\d{2}/.test(displayTime)) {
+              const d = new Date(displayTime);
+              if (!isNaN(d.getTime())) return d.toISOString();
+            }
+
             // Parse "09:15 AM", "05:34:40 PM", "05:33 pm" → hours, minutes, optional seconds
             const match = displayTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
             if (match) {
@@ -189,7 +195,7 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
               // Build total minutes since midnight in IST, then subtract 330 to get UTC.
               const istTotalMinutes = hours * 60 + minutes;
               const utcTotalMinutes = istTotalMinutes - 330; // IST → UTC offset
-              // Handle day boundary (e.g., early morning IST times may roll into previous UTC day)
+              // Handle day boundary
               const utcDate = new Date(`${recDateStr}T00:00:00Z`);
               utcDate.setUTCMinutes(utcDate.getUTCMinutes() + utcTotalMinutes);
               utcDate.setUTCSeconds(seconds, 0);
@@ -327,17 +333,9 @@ function getISTMinutes(d: Date): number {
 
 // ─── TIME CALCULATION ENGINE ─────────────────────────────────────────────────
 
-// Auto-detect unadjusted UTC hardware stamps (01:00 AM - 06:30 AM in IST) and shift +5h30m to IST
 function normalizeEventTime(eventTime: string | Date): Date {
   const d = new Date(eventTime);
-  const istHour = parseInt(
-    d.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: false, hour: 'numeric' }),
-    10
-  );
-  if (istHour >= 1 && istHour < 7) {
-    return new Date(d.getTime() + 330 * 60 * 1000);
-  }
-  return d;
+  return isNaN(d.getTime()) ? new Date() : d;
 }
 
 export function calculateNetSummaryForEvents(

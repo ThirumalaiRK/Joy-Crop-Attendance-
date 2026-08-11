@@ -41,11 +41,7 @@ export function parseDeviceTimeToUTC(deviceTimeStr: string | Date): string {
     const minute = deviceTimeStr.getMinutes();
     const second = deviceTimeStr.getSeconds();
 
-    let dt = DateTime.fromObject({ year, month, day, hour, minute, second }, { zone: APP_TIMEZONE });
-    // Auto-detect unadjusted UTC hardware stamps (01:00 AM - 06:30 AM) and shift +5h30m to IST
-    if (hour >= 1 && hour < 7) {
-      dt = dt.plus({ hours: 5, minutes: 30 });
-    }
+    const dt = DateTime.fromObject({ year, month, day, hour, minute, second }, { zone: APP_TIMEZONE });
     if (dt.isValid) return dt.toUTC().toISO()!;
     return deviceTimeStr.toISOString();
   }
@@ -60,10 +56,6 @@ export function parseDeviceTimeToUTC(deviceTimeStr: string | Date): string {
     dt = DateTime.fromISO(str, { zone: APP_TIMEZONE });
   }
   if (dt.isValid) {
-    // Auto-detect unadjusted UTC hardware stamps (01:00 AM - 06:30 AM) and shift +5h30m to IST
-    if (dt.hour >= 1 && dt.hour < 7) {
-      dt = dt.plus({ hours: 5, minutes: 30 });
-    }
     return dt.toUTC().toISO()!;
   }
 
