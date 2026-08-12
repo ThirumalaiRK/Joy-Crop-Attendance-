@@ -33,22 +33,52 @@ export async function GET() {
     }
   }
 
-  // 2. Query Supabase attendance_events table for live TCP socket log events
+  // 2. Query Supabase attendance_events table for today's live TCP socket log events in IST
   try {
+    const TODAY_IST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
     const { data: dbEvents } = await supabase
       .from('attendance_events')
       .select('*')
       .order('event_time', { ascending: false })
-      .limit(30);
+      .limit(60);
 
     if (dbEvents && dbEvents.length > 0) {
-      const logs = dbEvents.map((evt: any, i: number) => ({
-        id: i + 1,
-        time: evt.event_time || new Date().toISOString(),
-        level: evt.event_type || 'PUNCH',
-        ip: '192.168.1.56',
-        message: `${evt.employee_name || 'User ' + evt.employee_id} (${evt.employee_id}) — ${evt.event_type || 'Biometric Match'} verified via ${evt.method || 'fingerprint'} on ${evt.device || 'Identix K90 Pro'}`,
-      }));
+      // Deduplicate rapid raw punches within 3 seconds for clean terminal output
+      const seenTimeMap = new Map<string, number>();
+      const filteredEvents: any[] = [];
+
+      dbEvents.forEach((evt: any) => {
+        const evtTimeMs = new Date(evt.event_time || Date.now()).getTime();
+        const key = `${evt.employee_id}-${evt.event_type}`;
+        const lastMs = seenTimeMap.get(key) || 0;
+        if (Math.abs(evtTimeMs - lastMs) > 3000) {
+          seenTimeMap.set(key, evtTimeMs);
+          filteredEvents.push(evt);
+        }
+      });
+
+      const logs = (filteredEvents.length > 0 ? filteredEvents : dbEvents).slice(0, 25).map((evt: any, i: number) => {
+        const type = (evt.event_type || 'PUNCH').toUpperCase();
+        let level: 'info' | 'success' | 'warn' | 'error' = 'info';
+        if (type.includes('CHECK_IN') || type.includes('CHECK_OUT')) level = 'success';
+        else if (type.includes('DUPLICATE') || type.includes('RAW')) level = 'warn';
+        else if (type.includes('ERROR') || type.includes('REJECTED')) level = 'error';
+
+        const empName = evt.employee_name && !evt.employee_name.startsWith('User ')
+          ? evt.employee_name
+          : `Employee ${evt.employee_id}`;
+
+        return {
+          id: i + 1,
+          time: evt.event_time || new Date().toISOString(),
+          event: type,
+          level,
+          ip: '192.168.1.56',
+          message: `${empName} (${evt.employee_id}) — ${type} verified via ${evt.method || 'fingerprint'} on ${evt.device || 'Identix K90 Pro'}`,
+        };
+      });
+
       return NextResponse.json({ logs });
     }
   } catch (_) {}

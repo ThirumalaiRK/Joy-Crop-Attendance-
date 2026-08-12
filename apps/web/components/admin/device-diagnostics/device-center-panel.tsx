@@ -61,12 +61,24 @@ const LOG_COLORS: Record<string, string> = {
   error:   'text-rose-400',
   warn:    'text-amber-400',
   info:    'text-sky-400',
+  CHECK_IN: 'text-emerald-400',
+  CHECK_OUT: 'text-purple-400',
+  RAW_PUNCH: 'text-amber-400',
+  DUPLICATE_CHECK_IN: 'text-amber-300',
+  HEARTBEAT: 'text-rose-400',
+  SYSTEM: 'text-cyan-400',
 };
 const LOG_BG: Record<string, string> = {
   success: 'bg-emerald-400',
   error:   'bg-rose-400',
   warn:    'bg-amber-400',
   info:    'bg-sky-400',
+  CHECK_IN: 'bg-emerald-400',
+  CHECK_OUT: 'bg-purple-400',
+  RAW_PUNCH: 'bg-amber-400',
+  DUPLICATE_CHECK_IN: 'bg-amber-300',
+  HEARTBEAT: 'bg-rose-400',
+  SYSTEM: 'bg-cyan-400',
 };
 const EVENT_ICON: Record<string, string> = {
   ONLINE:      '✅',
@@ -75,6 +87,10 @@ const EVENT_ICON: Record<string, string> = {
   RECONNECTING:'🔄',
   HEARTBEAT:   '💓',
   SYSTEM:      '🖥',
+  CHECK_IN:    '🟢',
+  CHECK_OUT:   '🟣',
+  RAW_PUNCH:   '👆',
+  DUPLICATE_CHECK_IN: '⚠️',
 };
 
 
@@ -767,26 +783,33 @@ export function DeviceCenterPanel() {
               <p>No connection events yet. Start the connector to see live TCP socket logs.</p>
             </div>
           ) : (
-            connectionLogs.map((log) => (
-              <div key={`${log.id}-${log.time}`} className="flex items-start gap-2 hover:bg-white/[0.02] rounded px-1 py-0.5 transition">
-                {/* Level dot */}
-                <span className={`mt-0.5 size-1.5 rounded-full flex-shrink-0 ${LOG_BG[log.level] || 'bg-slate-600'}`} />
-                {/* Timestamp */}
-                <span className="text-slate-600 flex-shrink-0 w-24 truncate">
-                  {new Date(log.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                </span>
-                {/* Event badge */}
-                <span className={`flex-shrink-0 text-[9px] font-black uppercase tracking-wider w-20 truncate ${LOG_COLORS[log.level] || 'text-slate-400'}`}>
-                  [{log.event}]
-                </span>
-                {/* IP */}
-                <span className="text-violet-400 flex-shrink-0 w-28 truncate">{log.ip}</span>
-                {/* Message */}
-                <span className="text-slate-300 flex-1 break-all">{log.message}</span>
-                {/* Emoji icon */}
-                <span className="flex-shrink-0 text-xs">{EVENT_ICON[log.event] || '•'}</span>
-              </div>
-            ))
+            connectionLogs.map((log) => {
+              const evtLabel = (log.event || log.level || 'PUNCH').toUpperCase();
+              const timeStr = log.time
+                ? new Date(log.time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+                : '—';
+
+              return (
+                <div key={`${log.id}-${log.time}`} className="flex items-start gap-2 hover:bg-white/[0.02] rounded px-1 py-0.5 transition">
+                  {/* Level dot */}
+                  <span className={`mt-1 size-1.5 rounded-full flex-shrink-0 ${LOG_BG[evtLabel] || LOG_BG[log.level] || 'bg-slate-600'}`} />
+                  {/* Timestamp in IST */}
+                  <span className="text-slate-400 font-mono text-[10px] flex-shrink-0 w-24 truncate">
+                    {timeStr}
+                  </span>
+                  {/* Event badge */}
+                  <span className={`flex-shrink-0 text-[9px] font-black uppercase tracking-wider w-24 truncate ${LOG_COLORS[evtLabel] || LOG_COLORS[log.level] || 'text-slate-400'}`}>
+                    [{evtLabel}]
+                  </span>
+                  {/* IP */}
+                  <span className="text-violet-400 flex-shrink-0 w-28 truncate">{log.ip || '192.168.1.56'}</span>
+                  {/* Message */}
+                  <span className="text-slate-300 flex-1 break-all">{log.message}</span>
+                  {/* Emoji icon */}
+                  <span className="flex-shrink-0 text-xs">{EVENT_ICON[evtLabel] || EVENT_ICON[log.event] || '•'}</span>
+                </div>
+              );
+            })
           )}
         </div>
 
