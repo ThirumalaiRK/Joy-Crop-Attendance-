@@ -5,7 +5,7 @@ import {
   Radar, Plus, Cpu, HardDrive, Fingerprint, Users, Loader2,
   Wifi, WifiOff, RefreshCw, Clock, Zap, Shield, AlertTriangle, X,
   Download, RotateCcw, ChevronRight, MonitorSmartphone, Server, Network,
-  Terminal, Activity, Globe,
+  Terminal, Activity, Globe, Key, ShieldAlert,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { StatusDot } from '../../dashboard/status-dot';
@@ -277,28 +277,44 @@ export function DeviceCenterPanel() {
     dateFormat: 'YYYYMMDD',
   });
 
-  // ── Fetch connector /api/status ───────────────────────────────────────────────
+  // ── Fetch connector status safely (works both locally and on Vercel) ───────────
   const fetchConnectorStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${getConnectorBase()}/api/status`, { signal: AbortSignal.timeout(4000) });
+      const res = await fetch('/api/admin/device/status', { signal: AbortSignal.timeout(4000) });
       if (!res.ok) throw new Error('non-ok');
-      const data: ConnectorStatus = await res.json();
+      const data: ConnectorStatus & { offline?: boolean } = await res.json();
       setConnectorStatus(data);
-      setConnectorOffline(false);
+      setConnectorOffline(Boolean(data.offline));
     } catch {
+      try {
+        const res2 = await fetch(`${getConnectorBase()}/api/status`, { signal: AbortSignal.timeout(3000) });
+        if (res2.ok) {
+          const data2 = await res2.json();
+          setConnectorStatus(data2);
+          setConnectorOffline(false);
+          return;
+        }
+      } catch (_) {}
       setConnectorOffline(true);
     }
   }, []);
 
-  // ── Fetch connection logs from /api/logs ───────────────────────────────────────
+  // ── Fetch connection logs safely ────────────────────────────────────────────────
   const fetchConnectionLogs = useCallback(async () => {
     try {
       setLogsLoading(true);
-      const res = await fetch(`${getConnectorBase()}/api/logs`, { signal: AbortSignal.timeout(4000) });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (Array.isArray(data.logs)) {
-        setConnectionLogs(data.logs);
+      const res = await fetch('/api/admin/device/logs', { signal: AbortSignal.timeout(4000) });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.logs)) {
+          setConnectionLogs(data.logs);
+          return;
+        }
+      }
+      const res2 = await fetch(`${getConnectorBase()}/api/logs`, { signal: AbortSignal.timeout(3000) });
+      if (res2.ok) {
+        const data2 = await res2.json();
+        if (Array.isArray(data2.logs)) setConnectionLogs(data2.logs);
       }
     } catch {
       // Connector offline — keep existing logs
@@ -828,7 +844,7 @@ export function DeviceCenterPanel() {
         </div>
 
         {/* Sub-Tabs Header */}
-        <div className="flex border-b border-slate-800 bg-slate-900/50 px-6">
+        <div className="flex border-b border-slate-800 bg-slate-900/60 px-6 overflow-x-auto">
           {[
             { id: 'general', label: 'General' },
             { id: 'data_management', label: 'Data Management' },
@@ -836,19 +852,23 @@ export function DeviceCenterPanel() {
             { id: 'door_option', label: 'Door Option' },
             { id: 'wiegand', label: 'Wiegand Option' },
             { id: 'duress', label: 'Duress Option' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`px-5 py-3 text-xs font-bold border-b-2 transition ${
-                activeTab === tab.id
-                  ? 'border-emerald-400 text-emerald-400 bg-emerald-500/10'
-                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+          ].map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-5 py-3 text-xs font-bold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+                  isActive
+                    ? 'border-emerald-400 text-emerald-400 bg-emerald-500/10 shadow-[0_2px_12px_rgba(52,211,153,0.15)] font-black'
+                    : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+                }`}
+              >
+                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Tab Contents */}
@@ -1082,6 +1102,98 @@ export function DeviceCenterPanel() {
                   <div>
                     <label className="text-slate-400 block mb-1">Device Number:</label>
                     <Input value={deviceNumber} onChange={(e) => setDeviceNumber(e.target.value)} className="bg-slate-900 border-slate-800 text-slate-200" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'door_option' && (
+            <div className="space-y-6">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6 space-y-6">
+                <h3 className="text-xs font-black text-slate-300 uppercase tracking-wider border-b border-slate-800/60 pb-3 flex items-center gap-2">
+                  <Key className="w-4 h-4 text-emerald-400" /> Door Lock & Access Control Options
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Lock Delay (seconds):</label>
+                    <Input defaultValue="5" className="bg-slate-900 border-slate-800 text-slate-200" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Door Sensor Mode:</label>
+                    <select className="h-9 w-full rounded-lg bg-slate-900 border border-slate-800 text-slate-200 px-3 text-xs">
+                      <option value="none">Standard Relay (No Sensor)</option>
+                      <option value="NO">Normally Open (NO)</option>
+                      <option value="NC">Normally Closed (NC)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Door Alarm Delay (s):</label>
+                    <Input defaultValue="15" className="bg-slate-900 border-slate-800 text-slate-200" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Anti-Passback Mode:</label>
+                    <select className="h-9 w-full rounded-lg bg-slate-900 border border-slate-800 text-slate-200 px-3 text-xs">
+                      <option value="none">None</option>
+                      <option value="in">Out-In Check</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'wiegand' && (
+            <div className="space-y-6">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6 space-y-6">
+                <h3 className="text-xs font-black text-slate-300 uppercase tracking-wider border-b border-slate-800/60 pb-3 flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-emerald-400" /> Wiegand Card Reader Output
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Wiegand Format:</label>
+                    <select className="h-9 w-full rounded-lg bg-slate-900 border border-slate-800 text-slate-200 px-3 text-xs">
+                      <option value="26">Wiegand 26-bit</option>
+                      <option value="34">Wiegand 34-bit</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Pulse Width (μs):</label>
+                    <Input defaultValue="100" className="bg-slate-900 border-slate-800 text-slate-200" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Pulse Interval (μs):</label>
+                    <Input defaultValue="1000" className="bg-slate-900 border-slate-800 text-slate-200" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">ID Content Output:</label>
+                    <select className="h-9 w-full rounded-lg bg-slate-900 border border-slate-800 text-slate-200 px-3 text-xs">
+                      <option value="uid">User ID / PIN</option>
+                      <option value="card">Card Number</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'duress' && (
+            <div className="space-y-6">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6 space-y-6">
+                <h3 className="text-xs font-black text-slate-300 uppercase tracking-wider border-b border-slate-800/60 pb-3 flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-rose-400" /> Duress Silent Panic Alarm Options
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Duress Alarm Delay (s):</label>
+                    <Input defaultValue="10" className="bg-slate-900 border-slate-800 text-slate-200" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Silent Panic Signal Relay:</label>
+                    <select className="h-9 w-full rounded-lg bg-slate-900 border border-slate-800 text-slate-200 px-3 text-xs">
+                      <option value="enabled">Enabled (Notify Security Admin & Log Event)</option>
+                      <option value="disabled">Disabled</option>
+                    </select>
                   </div>
                 </div>
               </div>
