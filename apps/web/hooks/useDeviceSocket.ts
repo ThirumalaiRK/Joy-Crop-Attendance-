@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
-const CONNECTOR_URL = process.env.NEXT_PUBLIC_CONNECTOR_URL || "http://localhost:4000";
+import { getConnectorUrl } from "../lib/utils";
 
 export interface DeviceStatusState {
   ip: string;
@@ -26,7 +26,8 @@ export function useDeviceSocket() {
 
   useEffect(() => {
     const isBrowser = typeof window !== 'undefined';
-    const isLocalhostConnector = CONNECTOR_URL.includes('localhost') || CONNECTOR_URL.includes('127.0.0.1');
+    const connectorUrl = getConnectorUrl();
+    const isLocalhostConnector = connectorUrl.includes('localhost') || connectorUrl.includes('127.0.0.1');
     const isCloud = isBrowser && window.location.hostname.includes('vercel.app');
 
     // On cloud Vercel deployments without an active public tunnel, skip direct localhost socket
@@ -34,7 +35,7 @@ export function useDeviceSocket() {
       return;
     }
 
-    const socketInstance = io(CONNECTOR_URL, {
+    const socketInstance = io(connectorUrl, {
       transports: ['polling', 'websocket'],
       extraHeaders: {
         'ngrok-skip-browser-warning': 'true',

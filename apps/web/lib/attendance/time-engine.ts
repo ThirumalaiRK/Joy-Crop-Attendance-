@@ -209,7 +209,14 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
         if (rec.check_in_time) {
           const checkInEvtId = `rec-${rec.status || 'in'}-${rec.id}`;
           if (!existingIds.has(checkInEvtId)) {
-            const eventTime = buildISOFromDisplayTime(rec.check_in_time, createdAt);
+            // CRITICAL TIMEZONE FIX FOR VERCEL DEPLOYMENT:
+            // Always prefer real UTC created_at timestamp from DB (e.g. 2026-08-12T03:19:47.000Z).
+            // Converting real UTC timestamp to Asia/Kolkata timezone gives exact IST time (08:49:47 AM),
+            // regardless of whether Vercel server node process runs in UTC or IST!
+            const isIsoCreatedAt = Boolean(createdAt && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(createdAt));
+            const eventTime = isIsoCreatedAt
+              ? new Date(createdAt).toISOString()
+              : buildISOFromDisplayTime(rec.check_in_time, createdAt);
 
             // Map status string to AttendanceEventType
             let eventType: AttendanceEventType = 'CHECK_IN';
@@ -231,7 +238,7 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
               employeeName: empName,
               eventType,
               eventTime,
-              formattedTime: rec.check_in_time,
+              formattedTime: isIsoCreatedAt ? formatTimeAmPm(createdAt) : rec.check_in_time,
               device: rec.device_name || 'Mantra MFS110 L1',
               method: rec.method || 'Fingerprint',
               notes: rec.notes || `Workforce Event (${rec.confidence_score ? rec.confidence_score + '%' : 'Verified'})`,
@@ -245,7 +252,11 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
         if (rec.check_out_time && rec.check_out_time !== '—' && rec.check_out_time !== '-') {
           const checkOutEvtId = `rec-out-${rec.id}`;
           if (!existingIds.has(checkOutEvtId)) {
-            const eventTime = buildISOFromDisplayTime(rec.check_out_time, createdAt);
+            const isIsoUpdatedAt = Boolean(rec.updated_at && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rec.updated_at));
+            const eventTime = isIsoUpdatedAt
+              ? new Date(rec.updated_at).toISOString()
+              : buildISOFromDisplayTime(rec.check_out_time, createdAt);
+
             newStore.push({
               id: checkOutEvtId,
               sessionId: `sess-${empId}`,
@@ -253,7 +264,7 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
               employeeName: empName,
               eventType: 'CHECK_OUT',
               eventTime,
-              formattedTime: rec.check_out_time,
+              formattedTime: isIsoUpdatedAt ? formatTimeAmPm(rec.updated_at) : rec.check_out_time,
               device: rec.device_name || 'Mantra MFS110 L1',
               method: rec.method || 'Fingerprint',
               notes: `Biometric Check-Out (${rec.confidence_score ? rec.confidence_score + '%' : 'Verified'})`,
@@ -607,7 +618,7 @@ export async function logAttendanceEvent(payload: {
   notes?: string;
 }): Promise<{ success: boolean; event: AttendanceEvent; summary: AttendanceSummary }> {
   const nowIso = new Date().toISOString();
-  const formattedTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const formattedTime = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
 
   const newEvent: AttendanceEvent = {
     id: generateUUID(),

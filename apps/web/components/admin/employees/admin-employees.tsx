@@ -39,6 +39,7 @@ import {
   Radio,
   Key,
   ShieldAlert,
+  MonitorSmartphone,
 } from 'lucide-react';
 import {
   supabase,
@@ -458,6 +459,42 @@ export function AdminEmployees() {
   };
 
   const handleOpenEnrollModal = openEnrollModal;
+
+  /**
+   * Push a single employee's profile + fingerprint templates to the ZKTeco device via TCP.
+   * Calls POST /api/device/users/push on the connector (via Next.js proxy route if available,
+   * or directly to CONNECTOR_BASE).
+   */
+  const CONNECTOR_BASE = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
+
+  const handlePushToDevice = async (emp: Employee) => {
+    const rawCode = emp.employeeCode || emp.id || '';
+    const tid = toast.loading(`📱 Pushing ${emp.name} to device (${rawCode})...`);
+    try {
+      const res = await fetch(`${CONNECTOR_BASE}/api/device/users/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: '192.168.1.56',
+          employeeCode: rawCode,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+      const emp0 = data.results?.[0];
+      if (emp0) {
+        const templateMsg = emp0.templatesFound > 0
+          ? ` + ${emp0.templatesPushed}/${emp0.templatesFound} fingerprint(s)`
+          : ' (no fingerprints stored — enroll physically)';
+        toast.success(`✅ ${emp.name} pushed to device${templateMsg}`, { id: tid, duration: 6000 });
+      } else {
+        toast.success(data.message || `✅ ${emp.name} pushed successfully`, { id: tid });
+      }
+    } catch (err: any) {
+      toast.error(`❌ Push failed: ${err.message}`, { id: tid, duration: 8000 });
+    }
+  };
 
   const handleSelectFinger = (fingerIdx: number) => {
     setSelectedFinger(fingerIdx);
@@ -958,6 +995,14 @@ export function AdminEmployees() {
                       >
                         <Fingerprint className="w-3.5 h-3.5" />
                         <span>Enroll</span>
+                      </button>
+                      {/* ── Push to Device button ──────────────────────────── */}
+                      <button
+                        onClick={() => handlePushToDevice(emp)}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-indigo-600/20 text-slate-400 hover:text-indigo-400 transition border border-slate-700"
+                        title={`Push ${emp.name} (profile + fingerprints) to ZKTeco device via TCP`}
+                      >
+                        <MonitorSmartphone className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => openViewModal(emp)}

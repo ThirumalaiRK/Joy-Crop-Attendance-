@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Radar, Plus, Cpu, HardDrive, Fingerprint, Users, Loader2,
   Wifi, WifiOff, RefreshCw, Clock, Zap, Shield, AlertTriangle, X,
   Download, RotateCcw, ChevronRight, MonitorSmartphone, Server, Network,
+  Terminal, Activity, Globe,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { StatusDot } from '../../dashboard/status-dot';
@@ -20,9 +19,64 @@ import {
 } from '../../ui/sheet';
 import { fetchDevicesFromSupabase, supabase } from '../../../lib/supabase';
 import { BiometricDevice } from '../../../types';
+import { useDeviceSocket } from '../../../hooks/useDeviceSocket';
 
-const CONNECTOR_BASE = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
-const CONNECTOR = `${CONNECTOR_BASE}/api/device`;
+import { getConnectorUrl } from '../../../lib/utils';
+
+const getConnectorBase = () => getConnectorUrl();
+const getConnectorApi = () => `${getConnectorUrl()}/api/device`;
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface ConnectionLogEntry {
+  id: number;
+  time: string;
+  event: string;
+  ip: string;
+  message: string;
+  level: 'info' | 'success' | 'warn' | 'error';
+  meta?: Record<string, any>;
+}
+
+interface ConnectorStatus {
+  running: boolean;
+  machineName: string;
+  nodeVersion: string;
+  localIp: string;
+  listeningPort: number;
+  tcpConnectedCount: number;
+  totalTrackedDevices: number;
+  devices: Array<{ ip: string; name?: string; status: string; latency_ms?: number; lastHeartbeat?: string; firmware?: string }>;
+  employeeCacheSize: number;
+  inMemoryQueueSize: number;
+  wsClients: number;
+  memoryMB: number;
+  memoryTotalMB: number;
+  uptime: number;
+  lastHeartbeat: string;
+}
+
+// ── Log level style helpers ────────────────────────────────────────────────────
+const LOG_COLORS: Record<string, string> = {
+  success: 'text-emerald-400',
+  error:   'text-rose-400',
+  warn:    'text-amber-400',
+  info:    'text-sky-400',
+};
+const LOG_BG: Record<string, string> = {
+  success: 'bg-emerald-400',
+  error:   'bg-rose-400',
+  warn:    'bg-amber-400',
+  info:    'bg-sky-400',
+};
+const EVENT_ICON: Record<string, string> = {
+  ONLINE:      '✅',
+  OFFLINE:     '🔴',
+  CONNECTING:  '🔌',
+  RECONNECTING:'🔄',
+  HEARTBEAT:   '💓',
+  SYSTEM:      '🖥',
+};
+
 
 function DeviceCard({ d, onAction }: { d: BiometricDevice; onAction: (action: string, ip: string) => void }) {
   const isOnline = d.status === 'online';
@@ -127,6 +181,41 @@ function DeviceCard({ d, onAction }: { d: BiometricDevice; onAction: (action: st
   );
 }
 
+// ── Topology Node Card ──────────────────────────────────────────────────────
+function TopoNode({
+  icon: Icon, label, color, online, children,
+}: {
+  icon: React.ElementType; label: string; color: string; online: boolean; children?: React.ReactNode;
+}) {
+  return (
+    <div className={`flex-1 min-w-[140px] rounded-xl border p-4 space-y-2 ${online ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-slate-800 bg-slate-950/40'}`}>
+      <div className="flex items-center gap-2">
+        <div className={`flex size-8 items-center justify-center rounded-lg ${online ? `${color.replace('text-','bg-')}/10` : 'bg-slate-800'}`}>
+          <Icon className={`size-4 ${online ? color : 'text-slate-500'}`} />
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-slate-500">{label}</p>
+          <span className={`text-[10px] font-bold ${online ? 'text-emerald-400' : 'text-slate-500'}`}>
+            {online ? '● LIVE' : '○ OFFLINE'}
+          </span>
+        </div>
+      </div>
+      <div className="space-y-1 font-mono text-[11px] text-slate-400">{children}</div>
+    </div>
+  );
+}
+
+function ArrowRight() {
+  return (
+    <div className="flex-shrink-0 flex flex-col items-center justify-center gap-1 px-1">
+      <div className="w-10 h-0.5 bg-emerald-500/40 relative">
+        <span className="absolute right-0 top-[-3px] text-emerald-500 text-[8px]">▶</span>
+      </div>
+      <span className="text-[9px] text-slate-600 uppercase tracking-wide">TCP</span>
+    </div>
+  );
+}
+
 export function DeviceCenterPanel() {
   const [devices, setDevices] = useState<BiometricDevice[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<BiometricDevice | null>(null);
@@ -149,6 +238,18 @@ export function DeviceCenterPanel() {
   const [actionResultLog, setActionResultLog] = useState<{ time: string; action: string; status: 'success' | 'error'; message: string } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; icon?: string; danger?: boolean } | null>(null);
   const resolveConfirm = useRef<((v: boolean) => void) | null>(null);
+
+  // ── Live connection log state ───────────────────────────────────────────────
+  const [connectionLogs, setConnectionLogs] = useState<ConnectionLogEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const logScrollRef = useRef<HTMLDivElement>(null);
+
+  // ── Connector /api/status state ────────────────────────────────────────────
+  const [connectorStatus, setConnectorStatus] = useState<ConnectorStatus | null>(null);
+  const [connectorOffline, setConnectorOffline] = useState(false);
+
+  // ── Socket.IO hook ───────────────────────────────────────────────────────────
+  const { socket, isConnected, deviceStatuses } = useDeviceSocket();
 
   const showConfirm = (title: string, message: string, danger = false): Promise<boolean> =>
     new Promise((resolve) => {
@@ -176,6 +277,46 @@ export function DeviceCenterPanel() {
     dateFormat: 'YYYYMMDD',
   });
 
+  // ── Fetch connector /api/status ───────────────────────────────────────────────
+  const fetchConnectorStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${getConnectorBase()}/api/status`, { signal: AbortSignal.timeout(4000) });
+      if (!res.ok) throw new Error('non-ok');
+      const data: ConnectorStatus = await res.json();
+      setConnectorStatus(data);
+      setConnectorOffline(false);
+    } catch {
+      setConnectorOffline(true);
+    }
+  }, []);
+
+  // ── Fetch connection logs from /api/logs ───────────────────────────────────────
+  const fetchConnectionLogs = useCallback(async () => {
+    try {
+      setLogsLoading(true);
+      const res = await fetch(`${getConnectorBase()}/api/logs`, { signal: AbortSignal.timeout(4000) });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.logs)) {
+        setConnectionLogs(data.logs);
+      }
+    } catch {
+      // Connector offline — keep existing logs
+    } finally {
+      setLogsLoading(false);
+    }
+  }, []);
+
+  // ── Subscribe to realtime connection_log events via Socket.IO ────────────────────
+  useEffect(() => {
+    if (!socket) return;
+    const handleNewLog = (entry: ConnectionLogEntry) => {
+      setConnectionLogs((prev) => [entry, ...prev].slice(0, 50));
+    };
+    socket.on('connection_log', handleNewLog);
+    return () => { socket.off('connection_log', handleNewLog); };
+  }, [socket]);
+
   const loadDevices = async () => {
     setIsLoading(true);
     try {
@@ -196,16 +337,28 @@ export function DeviceCenterPanel() {
 
   useEffect(() => {
     loadDevices();
+    fetchConnectorStatus();
+    fetchConnectionLogs();
+
+    // Poll connector status every 30s and logs every 5s
+    const statusInterval = setInterval(fetchConnectorStatus, 30_000);
+    const logsInterval = setInterval(fetchConnectionLogs, 5_000);
+
     const ch = supabase.channel('device-center-panel-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, loadDevices)
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      supabase.removeChannel(ch);
+      clearInterval(statusInterval);
+      clearInterval(logsInterval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleTestConnection = async () => {
     const tid = toast.loading(`Testing TCP connection to ${ipAddress}:${port}...`);
     try {
-      const res = await fetch(`${CONNECTOR}/connect`, {
+      const res = await fetch(`${getConnectorApi()}/connect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ip: ipAddress, port: parseInt(port) || 4370, name: deviceName }),
@@ -213,10 +366,14 @@ export function DeviceCenterPanel() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Connection failed');
       toast.success(`✅ Connected to Identix K90 Pro at ${ipAddress}:${port}`, { id: tid });
+      // Refresh log and status after successful connection
+      fetchConnectionLogs();
+      fetchConnectorStatus();
+
 
       // Fetch Terminal Info
       try {
-        const infoRes = await fetch(`${CONNECTOR}/get-info`, {
+        const infoRes = await fetch(`${getConnectorApi()}/get-info`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ip: ipAddress }),
@@ -279,7 +436,7 @@ export function DeviceCenterPanel() {
       // If IP was changed, disconnect old socket and clean up old status
       if (oldIp && oldIp !== ipAddress) {
         try {
-          await fetch(`${CONNECTOR}/disconnect`, {
+          await fetch(`${getConnectorApi()}/disconnect`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ip: oldIp }),
@@ -290,7 +447,7 @@ export function DeviceCenterPanel() {
 
       // Initiate connection to new IP
       try {
-        await fetch(`${CONNECTOR}/connect`, {
+        await fetch(`${getConnectorApi()}/connect`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ip: ipAddress, port: parseInt(port) || 4370, name: deviceName }),
@@ -328,7 +485,7 @@ export function DeviceCenterPanel() {
     const tid = toast.loading(`Executing ${label} on terminal hardware (${ipAddress})...`);
 
     try {
-      const res = await fetch(`${CONNECTOR}/${action}`, {
+      const res = await fetch(`${getConnectorApi()}/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ip: ipAddress }),
@@ -363,6 +520,13 @@ export function DeviceCenterPanel() {
 
   const online = devices.filter(d => d.status === 'online').length;
   const offline = devices.filter(d => d.status === 'offline').length;
+
+  const formatUptime = (secs: number) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = Math.floor(secs % 60);
+    return `${h}h ${m}m ${s}s`;
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -438,13 +602,204 @@ export function DeviceCenterPanel() {
               <WifiOff className="size-3 text-rose-400" /><span className="text-xs text-rose-400">{offline} Offline</span>
             </div>
           )}
-          <Button variant="outline" size="sm" onClick={loadDevices} className="border-slate-700 text-slate-300">
+          <Button variant="outline" size="sm" onClick={() => { loadDevices(); fetchConnectorStatus(); fetchConnectionLogs(); }} className="border-slate-700 text-slate-300">
             <RefreshCw className="size-4 mr-1" /> Refresh
           </Button>
         </div>
       </div>
 
-      {/* Main ZKTime.Net Style Control Deck */}
+      {/* ══ TCP Node Topology Panel ════════════════════════════════════════════════ */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-950/80 shadow-xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/90 px-5 py-3">
+          <div className="flex items-center gap-2">
+            <Network className="size-4 text-indigo-400" />
+            <span className="text-xs font-bold text-slate-200 uppercase tracking-wide">Live TCP Connection Topology</span>
+            {isConnected ? (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" /> WS LIVE
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">
+                ○ WS OFFLINE
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => { fetchConnectorStatus(); fetchConnectionLogs(); }}
+            className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-slate-200 transition"
+          >
+            <RefreshCw className="size-3" /> Refresh Status
+          </button>
+        </div>
+
+        {/* Node Row */}
+        <div className="flex flex-wrap items-center gap-3 p-5 overflow-x-auto">
+
+          {/* Browser Node */}
+          <TopoNode icon={Globe} label="Browser" color="text-sky-400" online={isConnected}>
+            <div>WS: <span className="text-slate-200">{isConnected ? 'Connected' : 'Disconnected'}</span></div>
+            <div>WS Clients: <span className="text-slate-200">{connectorStatus?.wsClients ?? '—'}</span></div>
+            <div>Socket.IO: <span className={isConnected ? 'text-emerald-400' : 'text-rose-400'}>{isConnected ? 'ONLINE' : 'OFFLINE'}</span></div>
+          </TopoNode>
+
+          <ArrowRight />
+
+          {/* Connector Node */}
+          <TopoNode icon={Server} label="Connector" color="text-indigo-400" online={!connectorOffline}>
+            {connectorOffline ? (
+              <div className="text-rose-400">Cannot reach connector</div>
+            ) : connectorStatus ? (
+              <>
+                <div>Host: <span className="text-slate-200">{connectorStatus.machineName || '—'}</span></div>
+                <div>Node: <span className="text-slate-200">{connectorStatus.nodeVersion || '—'}</span></div>
+                <div>IP: <span className="text-slate-200">{connectorStatus.localIp}:{connectorStatus.listeningPort}</span></div>
+                <div>Uptime: <span className="text-slate-200">{formatUptime(connectorStatus.uptime)}</span></div>
+                <div>Memory: <span className="text-slate-200">{connectorStatus.memoryMB} MB</span></div>
+                <div>Emp Cache: <span className="text-slate-200">{connectorStatus.employeeCacheSize}</span></div>
+              </>
+            ) : (
+              <div className="text-slate-500">Loading…</div>
+            )}
+          </TopoNode>
+
+          <ArrowRight />
+
+          {/* TCP Engine Node */}
+          <TopoNode icon={Activity} label="TCP Engine" color="text-violet-400" online={!connectorOffline && (connectorStatus?.tcpConnectedCount ?? 0) > 0}>
+            {connectorStatus ? (
+              <>
+                <div>Connected: <span className="text-slate-200">{connectorStatus.tcpConnectedCount} device{connectorStatus.tcpConnectedCount !== 1 ? 's' : ''}</span></div>
+                <div>Tracked: <span className="text-slate-200">{connectorStatus.totalTrackedDevices}</span></div>
+                <div>Queue: <span className="text-slate-200">{connectorStatus.inMemoryQueueSize} events</span></div>
+              </>
+            ) : (
+              <div className="text-slate-500">{connectorOffline ? 'Offline' : 'Loading…'}</div>
+            )}
+          </TopoNode>
+
+          <ArrowRight />
+
+          {/* Device Nodes */}
+          <div className="flex-1 min-w-[160px]">
+            {connectorStatus && connectorStatus.devices.length > 0 ? (
+              <div className="space-y-2">
+                {connectorStatus.devices.map((dev) => {
+                  const socketStatus = deviceStatuses[dev.ip];
+                  const isDevOnline = (socketStatus?.status === 'ONLINE') || dev.status === 'online';
+                  return (
+                    <div
+                      key={dev.ip}
+                      className={`rounded-xl border px-4 py-3 space-y-1 font-mono text-[11px] text-slate-400 ${
+                        isDevOnline ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-slate-800 bg-slate-950/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MonitorSmartphone className={`size-4 ${isDevOnline ? 'text-emerald-400' : 'text-slate-500'}`} />
+                        <span className={`text-[10px] font-bold uppercase ${isDevOnline ? 'text-emerald-400' : 'text-slate-500'}`}>
+                          {isDevOnline ? '● ONLINE' : '○ OFFLINE'}
+                        </span>
+                      </div>
+                      <div>IP: <span className="text-slate-200">{dev.ip}</span></div>
+                      <div>Name: <span className="text-slate-200 truncate">{dev.name || socketStatus?.name || '—'}</span></div>
+                      <div>Latency: <span className={(socketStatus?.latency_ms ?? dev.latency_ms ?? 999) < 30 ? 'text-emerald-400' : 'text-amber-400'}>
+                        {socketStatus?.latency_ms ?? dev.latency_ms ?? '—'}ms
+                      </span></div>
+                      {dev.firmware && <div>FW: <span className="text-slate-300">{dev.firmware}</span></div>}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-xl border px-4 py-5 text-center font-mono text-[11px] border-slate-800 bg-slate-950/40">
+                <MonitorSmartphone className="size-6 text-slate-600 mx-auto mb-1" />
+                <p className="text-slate-500">{connectorOffline ? 'Connector offline' : 'No devices tracked'}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ══ Machine Connection Log Terminal ════════════════════════════════════════ */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-950/90 shadow-xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/90 px-5 py-3">
+          <div className="flex items-center gap-2">
+            <Terminal className="size-4 text-emerald-400" />
+            <span className="text-xs font-bold text-slate-200 uppercase tracking-wide">Machine Connection Log</span>
+            <span className="text-[10px] text-slate-500 font-mono">({connectionLogs.length} entries)</span>
+            {logsLoading && <Loader2 className="size-3 animate-spin text-slate-500" />}
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] text-slate-500 font-mono">Auto-refreshes every 5s via Socket.IO + poll</span>
+            <button
+              onClick={fetchConnectionLogs}
+              className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-200 transition"
+            >
+              <RefreshCw className="size-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Terminal Body */}
+        <div
+          ref={logScrollRef}
+          className="h-64 overflow-y-auto p-4 font-mono text-[11px] space-y-1"
+          style={{ background: 'rgba(2,6,12,0.95)' }}
+        >
+          {connectionLogs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-2">
+              <Terminal className="size-8" />
+              <p>No connection events yet. Start the connector to see live TCP socket logs.</p>
+            </div>
+          ) : (
+            connectionLogs.map((log) => (
+              <div key={`${log.id}-${log.time}`} className="flex items-start gap-2 hover:bg-white/[0.02] rounded px-1 py-0.5 transition">
+                {/* Level dot */}
+                <span className={`mt-0.5 size-1.5 rounded-full flex-shrink-0 ${LOG_BG[log.level] || 'bg-slate-600'}`} />
+                {/* Timestamp */}
+                <span className="text-slate-600 flex-shrink-0 w-24 truncate">
+                  {new Date(log.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+                {/* Event badge */}
+                <span className={`flex-shrink-0 text-[9px] font-black uppercase tracking-wider w-20 truncate ${LOG_COLORS[log.level] || 'text-slate-400'}`}>
+                  [{log.event}]
+                </span>
+                {/* IP */}
+                <span className="text-violet-400 flex-shrink-0 w-28 truncate">{log.ip}</span>
+                {/* Message */}
+                <span className="text-slate-300 flex-1 break-all">{log.message}</span>
+                {/* Emoji icon */}
+                <span className="flex-shrink-0 text-xs">{EVENT_ICON[log.event] || '•'}</span>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Terminal footer */}
+        <div className="flex items-center justify-between border-t border-slate-800/60 bg-slate-900/60 px-5 py-2">
+          <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">
+            <span className="flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-emerald-400" /> ONLINE: {connectionLogs.filter(l => l.event === 'ONLINE').length}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-rose-400" /> OFFLINE: {connectionLogs.filter(l => l.event === 'OFFLINE').length}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-amber-400" /> RECONNECT: {connectionLogs.filter(l => l.event === 'RECONNECTING').length}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-sky-400" /> HEARTBEAT: {connectionLogs.filter(l => l.event === 'HEARTBEAT').length}
+            </span>
+          </div>
+          <button
+            onClick={() => setConnectionLogs([])}
+            className="text-[10px] text-slate-600 hover:text-rose-400 transition font-mono"
+          >
+            [clear]
+          </button>
+        </div>
+      </div>
+
+
       <div className="rounded-2xl border border-slate-800 bg-slate-950/80 shadow-2xl overflow-hidden">
         {/* Top Control Action Bar */}
         <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/90 px-6 py-3">

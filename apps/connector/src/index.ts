@@ -34,6 +34,34 @@ const HEARTBEAT_BROADCAST_THROTTLE_MS = 30_000;
 /** Cache last attendance event for state restore on reconnect */
 let lastAttendanceEvent: any = null;
 
+// ── Machine Connection Log Ring Buffer ────────────────────────────────────────
+// Stores the last 50 device TCP lifecycle events in memory for the web UI log panel.
+export interface ConnectionLogEntry {
+  id: number;
+  time: string;     // ISO timestamp
+  event: string;    // 'CONNECTING' | 'ONLINE' | 'OFFLINE' | 'RECONNECTING' | 'HEARTBEAT' | 'SYSTEM'
+  ip: string;
+  message: string;
+  level: 'info' | 'success' | 'warn' | 'error';
+  meta?: Record<string, any>;
+}
+let logSeq = 0;
+const connectionLogBuffer: ConnectionLogEntry[] = [];
+const MAX_LOG_BUFFER = 50;
+
+function pushLog(event: string, ip: string, message: string, level: ConnectionLogEntry['level'], meta?: Record<string, any>) {
+  connectionLogBuffer.unshift({
+    id: ++logSeq,
+    time: new Date().toISOString(),
+    event,
+    ip,
+    message,
+    level,
+    meta,
+  });
+  if (connectionLogBuffer.length > MAX_LOG_BUFFER) connectionLogBuffer.length = MAX_LOG_BUFFER;
+}
+
 // Initialize System Services & Database
 initializeDatabase()
   .then(async () => {
@@ -67,13 +95,35 @@ eventQueue.on('attendance:new', (payload) => {
   io.emit('attendance_received', payload); // Backward compatibility alias
 });
 
-// Device status broadcasts
+// Device status broadcasts + log ring buffer capture
 deviceManager.on('device_connected', (data) => io.emit('device_connected', data));
-deviceManager.on('device:online', (data) => io.emit('device:online', data));
+
+deviceManager.on('device:online', (data) => {
+  io.emit('device:online', data);
+  pushLog('ONLINE', data.ip, `TCP socket ONLINE — ${data.name || data.ip}:${data.port || 4370}`, 'success', { port: data.port, name: data.name });
+  io.emit('connection_log', connectionLogBuffer[0]);
+});
+
 deviceManager.on('device_disconnected', (data) => io.emit('device_disconnected', data));
-deviceManager.on('device:offline', (data) => io.emit('device:offline', data));
-deviceManager.on('device:connecting', (data) => io.emit('device:connecting', data));
-deviceManager.on('device:reconnecting', (data) => io.emit('device:reconnecting', data));
+
+deviceManager.on('device:offline', (data) => {
+  io.emit('device:offline', data);
+  pushLog('OFFLINE', data.ip, `TCP socket OFFLINE — ${data.ip} lost connection`, 'error');
+  io.emit('connection_log', connectionLogBuffer[0]);
+});
+
+deviceManager.on('device:connecting', (data) => {
+  io.emit('device:connecting', data);
+  pushLog('CONNECTING', data.ip, `Initiating TCP socket to ${data.ip}:${data.port || 4370}...`, 'info', { port: data.port });
+  io.emit('connection_log', connectionLogBuffer[0]);
+});
+
+deviceManager.on('device:reconnecting', (data) => {
+  io.emit('device:reconnecting', data);
+  pushLog('RECONNECTING', data.ip, `Auto-reconnect scheduled for ${data.ip} (delay: ${data.delayMs}ms)`, 'warn', { delayMs: data.delayMs });
+  io.emit('connection_log', connectionLogBuffer[0]);
+});
+
 deviceManager.on('device_status', (data) => io.emit('device_status', data));
 
 // Heartbeat: throttle browser updates to 30s per device (TCP pings every 10s)
@@ -83,6 +133,8 @@ deviceManager.on('heartbeat', (data) => {
   if (now - last >= HEARTBEAT_BROADCAST_THROTTLE_MS) {
     lastHeartbeatBroadcast.set(data.ip, now);
     io.emit('heartbeat', data);
+    pushLog('HEARTBEAT', data.ip, `Heartbeat OK — latency ${data.latency_ms ?? '?'}ms`, 'info', { latency_ms: data.latency_ms });
+    io.emit('connection_log', connectionLogBuffer[0]);
   }
 });
 deviceManager.on('unknown_fingerprint', (data) => io.emit('unknown_fingerprint', data));
@@ -144,10 +196,17 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/api/logs', (req, res) => {
-  res.setHeader('Content-Type', 'text/plain');
-  res.send(
-    `[${new Date().toISOString()}] Connector v2.0.0 (Production Engine) Active on port ${PORT}\n[${new Date().toISOString()}] RAM Employee Cache: ${employeeCache.size()} records\n`
-  );
+  // Structured JSON log endpoint — returns the in-memory connection log ring buffer
+  // Also prepends a live system status entry at position 0
+  const systemEntry: ConnectionLogEntry = {
+    id: 0,
+    time: new Date().toISOString(),
+    event: 'SYSTEM',
+    ip: 'connector',
+    message: `Connector v2.0.0 active on :${PORT} | Employee cache: ${employeeCache.size()} | Queue: ${eventQueue.size()}`,
+    level: 'info',
+  };
+  res.json({ logs: [systemEntry, ...connectionLogBuffer] });
 });
 
 // Routes

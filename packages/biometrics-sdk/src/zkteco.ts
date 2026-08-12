@@ -287,6 +287,32 @@ export class ZKTecoDevice extends EventEmitter implements IBiometricDevice {
     }
   }
 
+  /**
+   * Write a fingerprint template to the device for a given UID and finger index.
+   * Uses CMD_USER_TEMP_WRQ (135).
+   * Payload: [ uid_lo, uid_hi, fingerIndex, ...template_bytes ]
+   * templateData should be the raw binary Buffer (ZKTeco ZFP format).
+   */
+  async setTemplate(uid: number, fingerIndex: number, templateData: Buffer): Promise<boolean> {
+    return this.withLock(async () => {
+      try {
+        const CMD_USER_TEMP_WRQ = 135;
+        // Header: 2-byte UID (little-endian) + 1-byte finger index
+        const header = Buffer.alloc(3);
+        header.writeUInt16LE(uid, 0);
+        header.writeUInt8(fingerIndex, 2);
+        const payload = Buffer.concat([header, templateData]);
+        await this.device.executeCmd(CMD_USER_TEMP_WRQ, payload);
+        await this.device.executeCmd(1013, ''); // CMD_REFRESHDATA
+        console.log(`✅ [ZKTecoDevice] setTemplate: UID=${uid} finger=${fingerIndex} (${templateData.length} bytes) written to ${this.ip}`);
+        return true;
+      } catch (error) {
+        console.error(`Failed to write template for UID ${uid} finger ${fingerIndex} to ${this.ip}`, error);
+        return false;
+      }
+    });
+  }
+
   async getDeviceInfo(): Promise<DeviceInfo> {
     try {
       let sn = "Unknown";

@@ -18,7 +18,12 @@ export interface DynamicGreeting {
  */
 export function getDynamicGreeting(name?: string): DynamicGreeting {
   const now = new Date();
-  const hour = now.getHours();
+  const istHourStr = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    hour12: false,
+  }).format(now);
+  const hour = parseInt(istHourStr, 10) || 0;
 
   let salutation = 'Good Morning';
   let icon = '🌅';
@@ -49,6 +54,7 @@ export function getDynamicGreeting(name?: string): DynamicGreeting {
 
   const greeting = name ? `${salutation}, ${name}` : salutation;
   const timeString = now.toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,

@@ -176,11 +176,11 @@ export async function purgeUnwantedMockEmployeesFromSupabase() {
     const { data: emps } = await supabase
       .from('employees')
       .select('id, employee_code, fingerprint_enrolled, is_enrolled')
-      .or('employee_code.eq.EMP-10,employee_code.eq.EMP-000010,id.eq.EMP-10,id.eq.EMP-000010');
+      .or('employee_code.eq.EMP-10,employee_code.eq.EMP-000010');
 
     if (emps && emps.length > 1) {
       const isAnyEnrolled = emps.some(e => Boolean(e.fingerprint_enrolled || e.is_enrolled));
-      const primary = emps.find(e => e.employee_code === 'EMP-10' || e.id === 'EMP-10') || emps[0];
+      const primary = emps.find(e => e.employee_code === 'EMP-10') || emps[0];
       const redundant = emps.filter(e => e.id !== primary.id);
 
       if (isAnyEnrolled) {

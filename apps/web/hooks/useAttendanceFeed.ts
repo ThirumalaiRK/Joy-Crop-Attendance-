@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
-const CONNECTOR_URL = process.env.NEXT_PUBLIC_CONNECTOR_URL || "http://localhost:4000";
+import { getConnectorUrl } from "../lib/utils";
 
 export interface AttendanceEvent {
   employeeId: string;
@@ -32,7 +32,7 @@ let refCount = 0;
 
 function getSharedSocket(): Socket {
   if (!sharedSocket || !sharedSocket.connected) {
-    sharedSocket = io(CONNECTOR_URL, {
+    sharedSocket = io(getConnectorUrl(), {
       transports: ['websocket', 'polling'],
       extraHeaders: {
         'ngrok-skip-browser-warning': 'true',

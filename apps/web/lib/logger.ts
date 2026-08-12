@@ -11,7 +11,7 @@ function pad(s: string, len = 10) {
 }
 
 function timestamp() {
-  return new Date().toLocaleTimeString('en-IN', { hour12: false });
+  return new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
 }
 
 function emit(level: LogLevel, domain: LogDomain, message: string, meta?: Record<string, any>) {

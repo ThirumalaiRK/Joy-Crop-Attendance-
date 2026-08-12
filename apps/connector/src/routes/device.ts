@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { deviceManager } from '../DeviceManager';
+import { supabase } from '../supabase';
 
 const router = Router();
 
@@ -697,6 +698,193 @@ router.post('/upload-wallpaper', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+/**
+ * POST /api/device/users/push
+ * Push one or more employees (with fingerprint templates) to the ZKTeco device over TCP.
+ *
+ * Body:
+ *   ip          - device IP (default: 192.168.1.56)
+ *   employeeCode  - single employee code string e.g. "10"
+ *   employeeCodes - array of codes e.g. ["10", "8"]
+ *
+ * For each employee:
+ *   1. Reads employee row from Supabase (name, device_uid, employee_code)
+ *   2. Reads all fingerprint_templates for that employee
+ *   3. Calls device.setUser() to write the user record via TCP
+ *   4. For each template: Base64-decode → device.setTemplate() to push fingerprint data
+ *   5. Sends CMD_REFRESHDATA to commit all writes
+ */
+router.post('/users/push', async (req, res) => {
+  const { ip, employeeCode, employeeCodes } = req.body;
+  const targetIp = ip || '192.168.1.56';
+
+  // Normalise input to an array of codes
+  const rawCodes: string[] = [];
+  if (employeeCodes && Array.isArray(employeeCodes)) {
+    rawCodes.push(...employeeCodes.map(String));
+  } else if (employeeCode) {
+    rawCodes.push(String(employeeCode));
+  }
+
+  if (rawCodes.length === 0) {
+    return res.status(400).json({ error: 'Provide employeeCode or employeeCodes array.' });
+  }
+
+  // Build all possible formats for each code: "10", "EMP-10", "EMP-000010" etc.
+  const allLookups: string[] = [];
+  for (const code of rawCodes) {
+    const num = parseInt(code.replace(/\D/g, ''), 10);
+    allLookups.push(code);
+    if (!isNaN(num)) {
+      allLookups.push(`EMP-${num}`);
+      allLookups.push(`EMP-${String(num).padStart(6, '0')}`);
+    }
+  }
+
+  // ── 1. Ensure device is connected ────────────────────────────────────────
+  let device = deviceManager.getDevice(targetIp);
+  if (!device) {
+    console.log(`[PushUser] Device ${targetIp} not connected — attempting auto-connect...`);
+    await deviceManager.connectToDevice(targetIp, 4370);
+    device = deviceManager.getDevice(targetIp);
+  }
+  if (!device) {
+    return res.status(400).json({ error: `Cannot reach device at ${targetIp}. Ensure the connector is connected.` });
+  }
+
+  // ── 2. Fetch employees from Supabase ──────────────────────────────────────
+  const { data: empRows, error: empErr } = await supabase
+    .from('employees')
+    .select('id, employee_code, device_uid, name')
+    .in('employee_code', allLookups);
+
+  if (empErr) {
+    return res.status(500).json({ error: `Supabase employees fetch error: ${empErr.message}` });
+  }
+  if (!empRows || empRows.length === 0) {
+    return res.status(404).json({ error: `No employees found for codes: ${rawCodes.join(', ')}. Check employee_code values.` });
+  }
+
+  // ── 3. Deduplicate (one row per original code) ────────────────────────────
+  const seen = new Set<string>();
+  const uniqueEmployees = empRows.filter((e: any) => {
+    if (seen.has(e.employee_code)) return false;
+    seen.add(e.employee_code);
+    return true;
+  });
+
+  const results: Array<{
+    employeeCode: string;
+    name: string;
+    uid: number;
+    userWritten: boolean;
+    templatesFound: number;
+    templatesPushed: number;
+    templatesFailed: number;
+    status: string;
+  }> = [];
+
+  for (const emp of uniqueEmployees) {
+    const empCode: string = emp.employee_code;
+    const empName: string = emp.name || 'Employee';
+    // Derive numeric UID: prefer device_uid column, else parse number from employee_code
+    const numericUid: number = emp.device_uid
+      ? parseInt(String(emp.device_uid), 10)
+      : (parseInt(empCode.replace(/\D/g, ''), 10) || 1);
+
+    console.log(`[PushUser] Processing ${empCode} ("${empName}") → UID=${numericUid} → ${targetIp}`);
+
+    let userWritten = false;
+    let templatesFound = 0;
+    let templatesPushed = 0;
+    let templatesFailed = 0;
+    let status = '';
+
+    // ── 3a. Write user profile to device ─────────────────────────────────
+    try {
+      userWritten = await device.setUser(numericUid, empCode, empName, '', 0, 0);
+      if (!userWritten) throw new Error('setUser returned false');
+      console.log(`[PushUser] ✅ User record written: UID=${numericUid} "${empName}"`);
+    } catch (userErr: any) {
+      console.error(`[PushUser] ❌ setUser failed for ${empCode}:`, userErr?.message);
+      results.push({ employeeCode: empCode, name: empName, uid: numericUid, userWritten: false, templatesFound: 0, templatesPushed: 0, templatesFailed: 0, status: `User write failed: ${userErr?.message}` });
+      continue;
+    }
+
+    // ── 3b. Fetch fingerprint templates from Supabase ─────────────────────
+    const { data: templates, error: tplErr } = await supabase
+      .from('fingerprint_templates')
+      .select('finger_position, finger_template, quality_score')
+      .eq('employee_code', empCode)
+      .order('quality_score', { ascending: false });
+
+    if (tplErr) {
+      console.warn(`[PushUser] Template fetch warning for ${empCode}: ${tplErr.message}`);
+    }
+
+    templatesFound = templates?.length ?? 0;
+    console.log(`[PushUser] Found ${templatesFound} fingerprint template(s) in Supabase for ${empCode}`);
+
+    // ── 3c. Push each fingerprint template to device ──────────────────────
+    // Map finger position name → ZKTeco finger index (0=Right Thumb, 1=Right Index, etc.)
+    const FINGER_MAP: Record<string, number> = {
+      'Right Thumb':   0,
+      'Right Index':   1,
+      'Right Middle':  2,
+      'Right Ring':    3,
+      'Right Little':  4,
+      'Left Thumb':    5,
+      'Left Index':    6,
+      'Left Middle':   7,
+      'Left Ring':     8,
+      'Left Little':   9,
+    };
+
+    for (const tpl of (templates || [])) {
+      const fingerIndex = FINGER_MAP[tpl.finger_position] ?? 0;
+      try {
+        // Decode base64 → raw binary Buffer
+        const templateBuf = Buffer.from(tpl.finger_template, 'base64');
+        const ok = await (device as any).setTemplate(numericUid, fingerIndex, templateBuf);
+        if (ok) {
+          templatesPushed++;
+          console.log(`[PushUser] ✅ Template pushed: UID=${numericUid} finger=${fingerIndex} ("${tpl.finger_position}") — ${templateBuf.length} bytes`);
+        } else {
+          templatesFailed++;
+          console.warn(`[PushUser] ⚠️ setTemplate returned false for UID=${numericUid} finger=${fingerIndex}`);
+        }
+      } catch (tplPushErr: any) {
+        templatesFailed++;
+        console.error(`[PushUser] ❌ Template push error UID=${numericUid} finger=${fingerIndex}:`, tplPushErr?.message);
+      }
+    }
+
+    // ── 3d. Final refresh ─────────────────────────────────────────────────
+    try {
+      await (device as any).device.executeCmd(1013, ''); // CMD_REFRESHDATA
+    } catch (_) {}
+
+    status = templatesPushed > 0
+      ? `✅ User + ${templatesPushed}/${templatesFound} fingerprint(s) pushed to device`
+      : templatesFound === 0
+        ? `✅ User record pushed (no fingerprints stored in Supabase — enroll physically)`
+        : `⚠️ User pushed but all ${templatesFound} template(s) failed to write`;
+
+    console.log(`[PushUser] ${status} for ${empCode} on ${targetIp}`);
+    results.push({ employeeCode: empCode, name: empName, uid: numericUid, userWritten, templatesFound, templatesPushed, templatesFailed, status });
+  }
+
+  const allOk = results.every(r => r.userWritten);
+  const totalPushed = results.reduce((s, r) => s + r.templatesPushed, 0);
+
+  return res.json({
+    status: allOk ? 'success' : 'partial',
+    message: `Pushed ${results.length} employee(s) to ${targetIp} — ${totalPushed} total fingerprint template(s) written`,
+    deviceIp: targetIp,
+    results,
+  });
 });
 
 export default router;
