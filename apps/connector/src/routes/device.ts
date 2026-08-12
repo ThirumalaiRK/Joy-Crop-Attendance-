@@ -732,13 +732,17 @@ router.post('/users/push', async (req, res) => {
     return res.status(400).json({ error: 'Provide employeeCode or employeeCodes array.' });
   }
 
-  // Build all possible formats for each code: "10", "EMP-10", "EMP-000010" etc.
+  // Build all possible formats for each code: "8", "EMP-8", "EMP-08", "EMP-008", "EMP-000008" etc.
   const allLookups: string[] = [];
   for (const code of rawCodes) {
-    const num = parseInt(code.replace(/\D/g, ''), 10);
-    allLookups.push(code);
+    const clean = String(code).trim();
+    allLookups.push(clean);
+    const num = parseInt(clean.replace(/\D/g, ''), 10);
     if (!isNaN(num)) {
+      allLookups.push(String(num));
       allLookups.push(`EMP-${num}`);
+      allLookups.push(`EMP-${String(num).padStart(2, '0')}`);
+      allLookups.push(`EMP-${String(num).padStart(3, '0')}`);
       allLookups.push(`EMP-${String(num).padStart(6, '0')}`);
     }
   }
@@ -757,7 +761,7 @@ router.post('/users/push', async (req, res) => {
   // ── 2. Fetch employees from Supabase ──────────────────────────────────────
   const { data: empRows, error: empErr } = await supabase
     .from('employees')
-    .select('id, employee_code, device_uid, name')
+    .select('id, employee_code, device_uid, device_user_id, name')
     .in('employee_code', allLookups);
 
   if (empErr) {
@@ -807,6 +811,15 @@ router.post('/users/push', async (req, res) => {
       userWritten = await device.setUser(numericUid, empCode, empName, '', 0, 0);
       if (!userWritten) throw new Error('setUser returned false');
       console.log(`[PushUser] ✅ User record written: UID=${numericUid} "${empName}"`);
+
+      // Persist hardware UID mapping in Supabase employees table
+      try {
+        await supabase.from('employees').update({
+          device_uid: numericUid,
+          device_user_id: empCode,
+          updated_at: new Date().toISOString(),
+        }).eq('id', emp.id);
+      } catch (_) {}
     } catch (userErr: any) {
       console.error(`[PushUser] ❌ setUser failed for ${empCode}:`, userErr?.message);
       results.push({ employeeCode: empCode, name: empName, uid: numericUid, userWritten: false, templatesFound: 0, templatesPushed: 0, templatesFailed: 0, status: `User write failed: ${userErr?.message}` });
