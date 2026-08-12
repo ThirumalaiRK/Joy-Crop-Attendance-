@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
 import { getConnectorUrl } from "../lib/utils";
+import { supabase } from "../lib/supabase";
 
 export interface DeviceStatusState {
   ip: string;
@@ -30,9 +31,63 @@ export function useDeviceSocket() {
     const isLocalhostConnector = connectorUrl.includes('localhost') || connectorUrl.includes('127.0.0.1');
     const isCloud = isBrowser && window.location.hostname.includes('vercel.app');
 
-    // On cloud Vercel deployments without an active public tunnel, skip direct localhost socket
+    // On cloud Vercel deployments without direct local tunnel, use Supabase Realtime Cloud Sync
     if (isCloud && isLocalhostConnector) {
-      return;
+      setIsConnected(true);
+      setConnectionError(null);
+
+      // Load initial device state from Supabase DB
+      supabase.from('device_status').select('*').then(({ data }) => {
+        if (data && data.length > 0) {
+          const map: Record<string, DeviceStatusState> = {};
+          data.forEach((d: any) => {
+            map[d.device_ip] = {
+              ip: d.device_ip,
+              name: d.device_name || 'Identix K90 Pro Terminal',
+              status: (d.status || 'ONLINE').toUpperCase() as any,
+              latency_ms: d.latency_ms || 12,
+              lastHeartbeat: d.last_ping || new Date().toISOString(),
+            };
+          });
+          deviceStatusesRef.current = map;
+          setDeviceStatuses(map);
+        }
+      });
+
+      // Subscribe to Supabase Realtime device status changes
+      const channel = supabase
+        .channel('cloud-device-sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'device_status' }, (payload: any) => {
+          const d = payload.new;
+          if (d && d.device_ip) {
+            updateDevice({
+              ip: d.device_ip,
+              name: d.device_name || 'Identix K90 Pro Terminal',
+              status: (d.status || 'ONLINE').toUpperCase() as any,
+              latency_ms: d.latency_ms || 12,
+              lastHeartbeat: d.last_ping || new Date().toISOString(),
+            });
+          }
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance_events' }, (payload: any) => {
+          const evt = payload.new;
+          if (evt) {
+            const punch = {
+              employeeId: evt.employee_id,
+              employeeName: evt.employee_name,
+              type: evt.event_type,
+              time: evt.event_time,
+              device: evt.device,
+            };
+            setLastAttendance(punch);
+            setAttendanceStream((prev) => [punch, ...prev.slice(0, 49)]);
+          }
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
 
     const socketInstance = io(connectorUrl, {

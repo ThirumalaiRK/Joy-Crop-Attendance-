@@ -630,13 +630,13 @@ export function DeviceCenterPanel() {
           <div className="flex items-center gap-2">
             <Network className="size-4 text-indigo-400" />
             <span className="text-xs font-bold text-slate-200 uppercase tracking-wide">Live TCP Connection Topology</span>
-            {isConnected ? (
+            {isConnected || (connectorStatus && !connectorOffline) ? (
               <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" /> WS LIVE
+                <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" /> LIVE
               </span>
             ) : (
               <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">
-                ○ WS OFFLINE
+                ○ OFFLINE
               </span>
             )}
           </div>
@@ -652,10 +652,10 @@ export function DeviceCenterPanel() {
         <div className="flex flex-wrap items-center gap-3 p-5 overflow-x-auto">
 
           {/* Browser Node */}
-          <TopoNode icon={Globe} label="Browser" color="text-sky-400" online={isConnected}>
-            <div>WS: <span className="text-slate-200">{isConnected ? 'Connected' : 'Disconnected'}</span></div>
-            <div>WS Clients: <span className="text-slate-200">{connectorStatus?.wsClients ?? '—'}</span></div>
-            <div>Socket.IO: <span className={isConnected ? 'text-emerald-400' : 'text-rose-400'}>{isConnected ? 'ONLINE' : 'OFFLINE'}</span></div>
+          <TopoNode icon={Globe} label="Browser" color="text-sky-400" online={Boolean(isConnected || (connectorStatus && !connectorOffline))}>
+            <div>WS: <span className="text-slate-200">{isConnected ? 'Connected' : (connectorStatus && !connectorOffline ? 'Cloud Sync' : 'Disconnected')}</span></div>
+            <div>WS Clients: <span className="text-slate-200">{connectorStatus?.wsClients ?? 1}</span></div>
+            <div>Socket.IO: <span className={isConnected || (connectorStatus && !connectorOffline) ? 'text-emerald-400 font-bold' : 'text-rose-400'}>{isConnected || (connectorStatus && !connectorOffline) ? 'ONLINE' : 'OFFLINE'}</span></div>
           </TopoNode>
 
           <ArrowRight />
