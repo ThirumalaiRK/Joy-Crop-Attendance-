@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  transpilePackages: ['@hrms/biometrics-sdk'],
   typescript: {
     ignoreBuildErrors: true,
   },
