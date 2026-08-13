@@ -47,7 +47,7 @@ export class BacklogDrainWorker {
             await AttendanceProcessor.processPunch({
               device_ip: record.device_ip,
               device_user_id: record.device_user_id,
-              event_time: record.event_time,
+              machine_timestamp: record.machine_timestamp || record.event_time_utc,
               verification_type: record.verification_type,
               device_name: record.device_name,
             });

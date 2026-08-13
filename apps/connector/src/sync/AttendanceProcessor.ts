@@ -5,35 +5,39 @@ import { parseDeviceTimeToUTC, getAttendanceDayRange } from '../timezone';
 export interface RawPunchLog {
   device_ip: string;
   device_user_id: string | number;
-  event_time: string | Date;
+  machine_timestamp?: string; // Exact device string e.g. "2026-08-13 09:20:59"
+  event_time?: string | Date; // Fallback if machine_timestamp is not set directly
+  received_at_utc?: string;
+  machine_log_id?: string;
   verification_type?: string;
   device_name?: string;
+  raw_payload?: string;
 }
 
 export interface ShiftTimetable {
   id: string;
   name: string;
   check_in_time: string; // e.g. "09:00"
-  check_out_time: string; // e.g. "16:00" or "18:00"
-  check_in_start: string; // e.g. "07:00"
-  check_in_end: string; // e.g. "11:00"
-  check_out_start: string; // e.g. "16:00"
-  check_out_end: string; // e.g. "21:00"
-  late_allowed_mins: number; // e.g. 5
-  early_out_allowed_mins: number; // e.g. 5
-  lunch_start: string; // e.g. "12:30"
-  lunch_end: string; // e.g. "14:30"
+  check_out_time: string; // e.g. "18:00"
+  check_in_start: string;
+  check_in_end: string;
+  check_out_start: string;
+  check_out_end: string;
+  late_allowed_mins: number;
+  early_out_allowed_mins: number;
+  lunch_start: string;
+  lunch_end: string;
 }
 
 const DEFAULT_SHIFT: ShiftTimetable = {
   id: 'SHIFT-DEFAULT',
   name: 'Standard Office Shift',
   check_in_time: '09:00',
-  check_out_time: '16:00',
-  check_in_start: '07:00',
-  check_in_end: '11:00',
-  check_out_start: '16:00',
-  check_out_end: '22:00',
+  check_out_time: '18:00',
+  check_in_start: '00:00',
+  check_in_end: '23:59',
+  check_out_start: '00:00',
+  check_out_end: '23:59',
   late_allowed_mins: 5,
   early_out_allowed_mins: 5,
   lunch_start: '13:00',
@@ -45,167 +49,193 @@ const punchCooldownMap = new Map<string, number>();
 
 export class AttendanceProcessor {
   /**
-   * Main entry point: Processes a raw TCP punch from biometric hardware
+   * Main entry point: Processes a raw punch from biometric hardware.
+   *
+   * IMMUTABLE RULE:
+   * 1. The exact machine_timestamp is inserted into `biometric_raw_punches` FIRST.
+   * 2. event_time_utc is derived explicitly using Asia/Kolkata timezone via Luxon.
+   * 3. Machine time is NEVER replaced or overwritten with server/received time.
    */
   static async processPunch(raw: RawPunchLog): Promise<any> {
-    const utcIso = parseDeviceTimeToUTC(raw.event_time);
-    const punchTime = new Date(utcIso);
-    const dayRange = getAttendanceDayRange(utcIso);
-    const dateStr = dayRange.dateIST; // YYYY-MM-DD in IST
-    const rawUserIdStr = String(raw.device_user_id).trim();
-    const timeStrIST = punchTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
-
-    console.log(`\n⚙️ [AttendanceProcessor] Processing raw punch for User ID "${rawUserIdStr}" at ${timeStrIST} IST (${raw.device_ip})`);
+    const rawUserIdStr = String(raw.device_user_id || '').trim();
+    const machineTimestampStr = String(raw.machine_timestamp || raw.event_time || '').trim();
 
     // ─── GUARD 1: Reject unenrolled, empty, or garbage user IDs ───────────────
-    // Also rejects control characters like ␦ (U+2406, ASCII 0x06) that the ZKTeco
-    // device sends when a user record was deleted from Supabase but not wiped from
-    // the hardware — the slot becomes corrupted and triggers these junk punches.
     const isPrintableAscii = /^[\x21-\x7E]+$/.test(rawUserIdStr);
     if (!rawUserIdStr || rawUserIdStr === '0' || rawUserIdStr === 'NaN' || !isPrintableAscii) {
-      console.warn(`🚫 [AttendanceProcessor] Rejected garbage punch (User ID "${rawUserIdStr}" = non-printable/control character). Delete this user from device hardware to stop these — use Admin → Device → Clear Users or device/users/delete.`);
+      console.warn(`🚫 [AttendanceProcessor] Rejected garbage punch (User ID "${rawUserIdStr}").`);
       return { status: 'REJECTED', reason: 'GARBAGE_USER_ID', raw: rawUserIdStr };
     }
 
+    if (!machineTimestampStr) {
+      console.warn(`🚫 [AttendanceProcessor] Rejected punch for User ID "${rawUserIdStr}": Missing machine_timestamp.`);
+      return { status: 'REJECTED', reason: 'MISSING_MACHINE_TIMESTAMP' };
+    }
+
+    // Explicitly parse machine_timestamp as Asia/Kolkata (IST) -> canonical UTC ISO
+    const eventTimeUtcIso = parseDeviceTimeToUTC(machineTimestampStr);
+    const punchTimeUtc = new Date(eventTimeUtcIso);
+    const dayRange = getAttendanceDayRange(eventTimeUtcIso);
+    const dateStrIST = dayRange.dateIST; // YYYY-MM-DD in IST
+
+    // Format IST display time string for logging
+    const timeStrIST = punchTimeUtc.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+
+    console.log(`\n⚙️ [AttendanceProcessor] Processing punch for User ID "${rawUserIdStr}" at ${machineTimestampStr} (IST: ${timeStrIST}) from ${raw.device_ip}`);
+
     // ─── GUARD 2: Reject timestamps > 24 hours in the future ─────────────────
-    // This catches the ZKTeco device clock bug where the device date is set wrong (e.g. year 2041)
     const nowMs = Date.now();
-    const punchMs = punchTime.getTime();
+    const punchMs = punchTimeUtc.getTime();
     if (punchMs > nowMs + 24 * 60 * 60 * 1000) {
-      console.warn(`🚫 [AttendanceProcessor] Rejected punch with FUTURE timestamp: ${punchTime.toISOString()} (device clock may be wrong). Please correct the ZKTeco device date/time.`);
-      return { status: 'REJECTED', reason: 'FUTURE_TIMESTAMP', deviceTime: punchTime.toISOString(), hostTime: new Date().toISOString() };
+      console.warn(`🚫 [AttendanceProcessor] Rejected punch with FUTURE timestamp: ${eventTimeUtcIso} (Device time: ${machineTimestampStr}).`);
+      return { status: 'REJECTED', reason: 'FUTURE_TIMESTAMP', deviceTime: machineTimestampStr };
     }
 
+    // ── STEP 1: Resolve Employee via Mapping Table / Cache ────────────────────
+    const employee = await this.resolveEmployee(rawUserIdStr, raw.device_ip);
 
-    // STEP 1: Always store raw event into attendance_events (Immutable Audit Trail)
-    const rawEvtId = `EVT-RAW-${rawUserIdStr}-${Date.now()}`;
+    const isMapped = !!employee;
+    let empCode = employee ? (employee.employee_code || employee.id) : null;
+    if (empCode) {
+      const num = parseInt(empCode.replace(/\D/g, ''), 10);
+      if (!isNaN(num)) {
+        empCode = `EMP-${String(num).padStart(2, '0')}`;
+      }
+    }
+    const empName = employee ? employee.name : null;
+    const dept = employee ? (employee.department || 'Engineering') : null;
+
+    // ── STEP 2: Insert into `biometric_raw_punches` (Immutable Source of Truth) ──
+    let rawPunchRecordId: string | null = null;
+    let rawPayloadObj: any = null;
+    if (raw.raw_payload) {
+      try { rawPayloadObj = typeof raw.raw_payload === 'string' ? JSON.parse(raw.raw_payload) : raw.raw_payload; } catch (_) {}
+    }
+
+    const rawPunchData = {
+      company_id: 'COMP-001',
+      device_ip: raw.device_ip,
+      device_user_id: rawUserIdStr,
+      employee_id: employee ? employee.id : null,
+      mapping_status: isMapped ? 'MAPPED' : 'UNMAPPED',
+      machine_log_id: raw.machine_log_id || null,
+      machine_timestamp: machineTimestampStr, // Exact device string e.g. "2026-08-13 09:20:59"
+      machine_timezone: 'Asia/Kolkata',
+      event_time_utc: eventTimeUtcIso,       // Canonical UTC ISO
+      event_type: 'IN',                      // Raw punch event mode
+      verification_type: (raw.verification_type || 'FINGERPRINT').toUpperCase(),
+      raw_payload: rawPayloadObj,
+      source: 'BIOMETRIC_MACHINE',
+      received_at_utc: raw.received_at_utc || new Date().toISOString(),
+    };
+
     try {
-      await supabase.from('attendance_events').insert([{
-        id: rawEvtId,
-        employee_id: rawUserIdStr,
-        employee_name: `User ${rawUserIdStr}`,
-        event_type: 'RAW_PUNCH',
-        event_time: punchTime.toISOString(),
-        device: raw.device_name || `Identix K90 Pro (${raw.device_ip})`,
-        method: raw.verification_type || 'fingerprint',
-        location: 'HQ Terminal',
-        notes: `Raw TCP Punch Received from ${raw.device_ip}`,
-      }]);
+      const { data: insertedRaw, error: rawInsertErr } = await supabase
+        .from('biometric_raw_punches')
+        .insert([rawPunchData])
+        .select('id')
+        .single();
+
+      if (rawInsertErr) {
+        if (rawInsertErr.code === '23505' || rawInsertErr.message?.includes('duplicate')) {
+          console.log(`ℹ️ [AttendanceProcessor] Already ingested machine punch (${machineTimestampStr}, User ${rawUserIdStr}). Skipping.`);
+          return { status: 'ALREADY_INGESTED', machine_timestamp: machineTimestampStr };
+        }
+        console.warn('⚠️ [AttendanceProcessor] biometric_raw_punches insert warning:', rawInsertErr.message);
+      } else if (insertedRaw) {
+        rawPunchRecordId = insertedRaw.id;
+      }
     } catch (err: any) {
-      console.warn('[AttendanceProcessor] Audit log notice:', err?.message);
+      console.warn('⚠️ [AttendanceProcessor] biometric_raw_punches exception:', err?.message);
     }
 
-    // STEP 2: Resolve Employee from Supabase DB
-    const employee = await this.resolveEmployee(rawUserIdStr);
-
-    if (!employee) {
-      console.warn(`⚠️ [AttendanceProcessor] Unmapped punch for Hardware User ID "${rawUserIdStr}". Logging to unknown_events.`);
+    // If unmapped, log and stop processing (do NOT create dummy employee, DO NOT discard raw punch!)
+    if (!isMapped) {
+      console.warn(`⚠️ [AttendanceProcessor] Unmapped punch for Hardware User ID "${rawUserIdStr}". Stored as UNMAPPED in biometric_raw_punches.`);
       try {
         await supabase.from('attendance_unknown_events').insert([{
           device_ip: raw.device_ip,
           device_user_id: rawUserIdStr,
-          event_time: punchTime.toISOString(),
+          event_time: eventTimeUtcIso,
           verification_type: raw.verification_type || 'fingerprint',
+          notes: `Machine time: ${machineTimestampStr}`,
         }]);
       } catch (_) {}
-      return { status: 'UNKNOWN_USER', device_user_id: rawUserIdStr };
+      return { status: 'UNKNOWN_USER', device_user_id: rawUserIdStr, machine_timestamp: machineTimestampStr };
     }
-
-    let empCode = employee.employee_code || employee.id;
-    const num = parseInt(empCode.replace(/\D/g, ''), 10);
-    if (!isNaN(num)) {
-      empCode = `EMP-${String(num).padStart(2, '0')}`;
-    }
-    const empName = employee.name;
-    const dept = employee.department || 'Engineering';
 
     console.log(`👤 [AttendanceProcessor] Mapped User ID "${rawUserIdStr}" -> Employee: ${empName} (${empCode})`);
 
-    // Ensure employee enrollment status in database is synchronized
-    try {
-      supabase.from('employees').update({
-        fingerprint_enrolled: true,
-        is_enrolled: true,
-        updated_at: new Date().toISOString(),
-      }).eq('id', employee.id).then(() => {});
-    } catch (_) {}
-
-    // STEP 3: Load Active Shift Timetable from Supabase Database
+    // STEP 3: Load Active Shift Timetable
     const shift = await this.loadActiveTimetable();
 
-    // STEP 4: Fetch or Initialize Today's Attendance Session
-    let session = await this.getOrCreateSession(empCode, empName, dept, dateStr);
-
-    // STEP 5: Classify Punch against Shift Windows
-    const classification = this.classifyPunch(punchTime, session, shift, empCode);
-
-    console.log(`🏷️ [AttendanceProcessor] Punch Classified as: ${classification.eventType} (Late: ${classification.lateMins}m, Early: ${classification.earlyMins}m)`);
-
-    // STEP 6: Update Session Record
-    session = await this.applyClassificationToSession(session, punchTime, classification, shift);
-
-    // STEP 7: Update attendance_records (Web Dashboard View)
-    await this.updateAttendanceRecord(empCode, empName, dept, session, raw.device_ip);
-
-    // STEP 8: Store Classified Event in attendance_events Audit Trail
-    const classifiedEvtId = `EVT-${classification.eventType}-${empCode}-${Date.now()}`;
-    try {
-      await supabase.from('attendance_events').insert([{
-        id: classifiedEvtId,
-        session_id: session.id,
-        employee_id: empCode,
-        employee_name: empName,
-        event_type: classification.eventType,
-        event_time: punchTime.toISOString(),
-        device: raw.device_name || `Identix K90 Pro (${raw.device_ip})`,
-        method: raw.verification_type || 'fingerprint',
-        location: classification.eventType.includes('OUT') ? 'HQ Main Exit' : 'HQ Main Entrance',
-        notes: `Classified ${classification.eventType} - Match Confidence: 99.8%`,
-      }]);
-    } catch (_) {}
+    // STEP 4: Recalculate Daily Summary strictly from ordered biometric_raw_punches for this employee & IST date
+    const summaryResult = await this.recalculateDailySummaryFromRawPunches(
+      'COMP-001', employee.id, empCode!, empName!, dept!, dateStrIST
+    );
 
     return {
       status: 'SUCCESS',
       employee_id: empCode,
       employee_name: empName,
-      classified_event: classification.eventType,
-      session,
+      machine_timestamp: machineTimestampStr,
+      summary: summaryResult,
     };
   }
 
   /**
-   * Resolves employee record using RAM Employee Cache (O(1) <1ms) with DB fallback
+   * Resolves employee record using explicit mapping table first, RAM cache second, DB third.
+   * NO hardcoded mock employee fallback allowed.
    */
-  private static async resolveEmployee(rawUserIdStr: string): Promise<any> {
+  private static async resolveEmployee(rawUserIdStr: string, deviceIp?: string): Promise<any> {
     const cleanId = rawUserIdStr.trim();
-    if (!cleanId || cleanId === '0' || cleanId === 'EMP-0' || cleanId === 'EMP-000000') {
-      return null;
-    }
+    if (!cleanId || cleanId === '0' || cleanId === 'EMP-0') return null;
 
-    // 1. Instantaneous RAM Cache Lookup (<1ms)
+    // 1. Check explicit mapping table (employee_biometric_mappings)
+    try {
+      let query = supabase
+        .from('employee_biometric_mappings')
+        .select('employee_id, employees(*)')
+        .eq('device_user_id', cleanId)
+        .eq('is_active', true);
+
+      if (deviceIp) {
+        query = query.or(`device_ip.eq.${deviceIp},device_ip.is.null`);
+      }
+
+      const { data: mappings } = await query.limit(1);
+      if (mappings && mappings.length > 0 && (mappings[0] as any).employees) {
+        const emp = (mappings[0] as any).employees;
+        employeeCache.set(emp);
+        return emp;
+      }
+    } catch (_) {}
+
+    // 2. RAM Cache Lookup
     const cached = employeeCache.get(cleanId);
     if (cached && cached.name && !cached.name.toLowerCase().includes('employee 0')) {
       return cached;
     }
 
     const numericUid = parseInt(cleanId.replace(/\D/g, ''), 10);
-    if (isNaN(numericUid) || numericUid <= 0) {
-      return null;
-    }
+    if (isNaN(numericUid) || numericUid <= 0) return null;
 
-    const unpaddedCode = `EMP-${String(numericUid).padStart(2, '0')}`;
     const codeVariants = [
       `EMP-${numericUid}`,
       `EMP-${String(numericUid).padStart(2, '0')}`,
       `EMP-${String(numericUid).padStart(3, '0')}`,
       `EMP-${String(numericUid).padStart(6, '0')}`,
       String(numericUid),
-      String(numericUid).padStart(2, '0'),
-      String(numericUid).padStart(3, '0'),
       cleanId,
     ];
 
-    // 2. Fallback search in employees table (checking employee_code, device_user_id, and numeric device_uid)
+    // 3. Query employees table by employee_code or device_user_id or device_uid
     const orClauses = codeVariants.map(v => `employee_code.eq.${v},device_user_id.eq.${v}`).join(',') + `,device_uid.eq.${numericUid}`;
     const { data: emps } = await supabase
       .from('employees')
@@ -218,7 +248,7 @@ export class AttendanceProcessor {
       return emps[0];
     }
 
-    // 3. Search in device_users table for hardware mapping
+    // 4. Query device_users table
     const { data: devUser } = await supabase
       .from('device_users')
       .select('*')
@@ -226,6 +256,7 @@ export class AttendanceProcessor {
       .maybeSingle();
 
     if (devUser && devUser.name && !devUser.name.toLowerCase().includes('employee 0')) {
+      const unpaddedCode = `EMP-${String(numericUid).padStart(2, '0')}`;
       const newEmp = {
         id: require('crypto').randomUUID(),
         employee_code: unpaddedCode,
@@ -242,41 +273,16 @@ export class AttendanceProcessor {
       return newEmp;
     }
 
-    // Known static enrollments fallback
-    if (numericUid === 1 || numericUid === 2 || numericUid === 10 || numericUid === 12 || numericUid === 5) {
-      const empName = numericUid === 1 ? 'Dharun B' :
-                      (numericUid === 2 || numericUid === 10) ? 'THIRUMALAI RK' :
-                      numericUid === 12 ? 'sakthi rk' : 'Ramesh Kumar';
-      const empDept = numericUid === 1 ? 'Marketing' : 'Engineering';
-      const emp = {
-        id: require('crypto').randomUUID(),
-        employee_code: unpaddedCode,
-        device_user_id: cleanId,
-        name: empName,
-        department: empDept,
-        status: 'Active',
-        updated_at: new Date().toISOString(),
-      };
-      try {
-        await supabase.from('employees').insert([emp]);
-        employeeCache.set(emp);
-      } catch (_) {}
-      return emp;
-    }
-
-    // Unenrolled / Unknown Fingerprint: Do NOT create dummy employee
+    // NO hardcoded mock fallback — return null if unmapped
     return null;
   }
 
-  /**
-   * Fetches existing session or creates a new initialized session for today
-   */
-  private static async getOrCreateSession(empCode: string, empName: string, dept: string, dateStr: string): Promise<any> {
+  private static async getOrCreateSession(empCode: string, empName: string, dept: string, dateStrIST: string): Promise<any> {
     const { data: existingRows } = await supabase
       .from('attendance_sessions')
       .select('*')
       .eq('employee_id', empCode)
-      .eq('session_date', dateStr)
+      .eq('session_date', dateStrIST)
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -287,7 +293,7 @@ export class AttendanceProcessor {
       employee_id: empCode,
       employee_name: empName,
       department: dept,
-      session_date: dateStr,
+      session_date: dateStrIST,
       status: 'PENDING',
       total_time_mins: 0,
       net_work_mins: 0,
@@ -306,9 +312,7 @@ export class AttendanceProcessor {
       .select()
       .single();
 
-    if (error || !inserted) {
-      return newSession; // newSession already has the generated id
-    }
+    if (error || !inserted) return newSession;
     return inserted;
   }
 
@@ -324,19 +328,14 @@ export class AttendanceProcessor {
     return h * 60 + m;
   }
 
-  /**
-   * Evaluates punch time against shift timetables & State Machine.
-   * Uses ONLY columns that exist in the attendance_sessions DB table.
-   * Cooldown (10s) is tracked via an in-memory Map (punchCooldownMap).
-   */
   private static classifyPunch(
-    punchTime: Date,
+    punchTimeUtc: Date,
     session: any,
     shift: ShiftTimetable,
     empCode: string
   ): { eventType: string; lateMins: number; earlyMins: number; userMessage: string; userSubtext: string } {
-    const punchMins = this.getISTMinutes(punchTime);
-    const currentPunchMs = punchTime.getTime();
+    const punchMins = this.getISTMinutes(punchTimeUtc);
+    const currentPunchMs = punchTimeUtc.getTime();
 
     const [shInH, shInM] = shift.check_in_time.split(':').map(Number);
     const shiftInMins = shInH * 60 + shInM;
@@ -346,11 +345,9 @@ export class AttendanceProcessor {
 
     const [shOutStartH, shOutStartM] = (shift.check_out_start || '16:00').split(':').map(Number);
     const shiftOutStartMins = shOutStartH * 60 + shOutStartM;
-
-    // Effective Check-Out window start (e.g. 16:00 / 4:00 PM or 30 mins before shift end, whichever is earlier)
     const effectiveCheckOutStart = Math.min(shiftOutStartMins, shiftOutMins - 30);
 
-    // ── RULE 0: 3-Second Rapid Double-Tap Cooldown Guard (in-memory) ──────────
+    // Rapid double-tap cooldown (3s)
     const lastMs = punchCooldownMap.get(empCode) || 0;
     if (lastMs > 0 && Math.abs(currentPunchMs - lastMs) < 3_000) {
       return {
@@ -361,10 +358,9 @@ export class AttendanceProcessor {
         userSubtext: 'Fingerprint already verified recently.',
       };
     }
-    // Update cooldown map with this punch time
     punchCooldownMap.set(empCode, currentPunchMs);
 
-    // ── STATE: NO_SESSION (First scan of the day → CHECK_IN) ─────────────────
+    // First scan of the day -> CHECK_IN
     if (!session || !session.check_in_time) {
       let lateMins = 0;
       if (punchMins > shiftInMins + shift.late_allowed_mins) {
@@ -379,10 +375,7 @@ export class AttendanceProcessor {
       };
     }
 
-    // ── STATE: CHECKED_IN (Already checked in, evaluating exit scan) ─────────
-    // Check-Out condition:
-    // 1. Punch is at or after effectiveCheckOutStart (e.g. >= 16:00 / 4:00 PM) OR
-    // 2. Punch is in afternoon (>= 13:00 / 1:00 PM) OR at least 30 minutes after check_in_time
+    // Exit scan evaluation
     const checkInMs = session.check_in_time ? new Date(session.check_in_time).getTime() : 0;
     const isAfternoonOrSubstantial = punchMins >= 13 * 60 || (checkInMs > 0 && (currentPunchMs - checkInMs >= 30 * 60 * 1000));
     const inCheckOutWindow = punchMins >= effectiveCheckOutStart || isAfternoonOrSubstantial;
@@ -401,7 +394,6 @@ export class AttendanceProcessor {
       };
     }
 
-    // Duplicate Check-In Guard — scan during early working hours (before afternoon/exit window)
     return {
       eventType: 'DUPLICATE_CHECK_IN',
       lateMins: 0,
@@ -411,22 +403,18 @@ export class AttendanceProcessor {
     };
   }
 
-  /**
-   * Updates session record with computed session totals & state machine transitions
-   */
-  private static async applyClassificationToSession(session: any, punchTime: Date, cls: any, shift: ShiftTimetable): Promise<any> {
-    const isoTime = punchTime.toISOString();
+  private static async applyClassificationToSession(
+    session: any, punchTimeUtc: Date, cls: any, shift: ShiftTimetable
+  ): Promise<any> {
+    const isoTime = punchTimeUtc.toISOString();
     const nowIso = new Date().toISOString();
 
-    // ── IGNORED events: no session mutation needed ────────────────────────────
     if (
       cls.eventType === 'DUPLICATE_CHECK_IN' ||
       cls.eventType === 'ALREADY_CHECKED_OUT' ||
       cls.eventType === 'COOLDOWN_IGNORE' ||
       cls.eventType === 'DUPLICATE_IGNORE'
     ) {
-      console.log(`⏱️ [AttendanceProcessor] ${cls.eventType}: Scan ignored — ${cls.userSubtext}`);
-      // Only update updated_at (no extra columns that don't exist)
       await supabase
         .from('attendance_sessions')
         .update({ updated_at: nowIso })
@@ -434,7 +422,6 @@ export class AttendanceProcessor {
       return session;
     }
 
-    // ── Build update payload using ONLY existing DB columns ───────────────────
     const updatePayload: any = { updated_at: nowIso };
 
     if (cls.eventType === 'CHECK_IN') {
@@ -445,16 +432,15 @@ export class AttendanceProcessor {
       updatePayload.check_out_time = isoTime;
       updatePayload.is_finalized = true;
 
-      // Calculate total worked span
       const startT = new Date(session.check_in_time || isoTime);
-      const endT = punchTime;
+      const endT = punchTimeUtc;
       const totalMins = Math.max(0, Math.round((endT.getTime() - startT.getTime()) / (1000 * 60)));
 
-      // Calculate 1:00 PM - 2:00 PM (13:00 - 14:00) Lunch Overlap
+      // 1:00 PM - 2:00 PM lunch overlap deduction
       const startISTMins = this.getISTMinutes(startT);
       const endISTMins = this.getISTMinutes(endT);
-      const lunchStartMins = 13 * 60; // 780 mins
-      const lunchEndMins = 14 * 60;   // 840 mins
+      const lunchStartMins = 13 * 60;
+      const lunchEndMins = 14 * 60;
       const overlapStart = Math.max(startISTMins, lunchStartMins);
       const overlapEnd = Math.min(endISTMins, lunchEndMins);
       const lunchOverlapMins = Math.max(0, overlapEnd - overlapStart);
@@ -477,71 +463,233 @@ export class AttendanceProcessor {
       .select()
       .maybeSingle();
 
-    if (error) {
-      console.warn('[AttendanceProcessor] Session update error:', error.message);
-    }
-
+    if (error) console.warn('[AttendanceProcessor] Session update error:', error.message);
     return updated || { ...session, ...updatePayload };
   }
 
-  /**
-   * Updates attendance_records table for the Next.js web portal view
-   */
-  private static async updateAttendanceRecord(empCode: string, empName: string, dept: string, session: any, deviceIp: string): Promise<void> {
+  private static async updateAttendanceRecord(
+    empCode: string,
+    empName: string,
+    dept: string,
+    session: any,
+    deviceIp: string,
+    machineTimestampStr: string,
+    eventTimeUtcIso: string,
+    rawPunchRecordId: string | null
+  ): Promise<void> {
     const recId = `LOG-${session.session_date}-${empCode}`;
-    const checkInStr = session.check_in_time
+    const checkInDisplayStr = session.check_in_time
       ? new Date(session.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
       : null;
-    const checkOutStr = session.check_out_time
+    const checkOutDisplayStr = session.check_out_time
       ? new Date(session.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
       : null;
 
     try {
-      // IMPORTANT: session.session_date is always stored as IST YYYY-MM-DD (e.g. '2026-08-10')
-      // Do NOT use 'Today' — it breaks date filtering for past dates and monthly payroll view
-      const istDate = session.session_date || new Date(session.check_in_time || Date.now()).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-
-      await supabase.from('attendance_records').upsert([{
+      const payload: any = {
         id: recId,
         employee_id: empCode,
         employee_name: empName,
-        employee_avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
         department: dept,
-        check_in_time: checkInStr,
-        check_out_time: checkOutStr,
-        date: istDate,  // IST date e.g. '2026-08-10' — enables day/month/history filtering
+        check_in_time: checkInDisplayStr,
+        check_out_time: checkOutDisplayStr,
+        check_in_utc: session.check_in_time || null,
+        check_out_utc: session.check_out_time || null,
+        date: session.session_date,
         method: 'fingerprint',
         status: session.status === 'LATE' ? 'late' : 'present',
-        device_name: `Identix K90 Pro Terminal (${deviceIp})`,
+        device_name: `Identix Terminal (${deviceIp})`,
         confidence_score: 99.8,
         location: 'HQ Main Terminal',
         verified: true,
-      }], { onConflict: 'id' });
+      };
+
+      if (rawPunchRecordId && !session.check_out_time) {
+        payload.first_punch_id = rawPunchRecordId;
+        payload.machine_check_in_ts = machineTimestampStr;
+      } else if (rawPunchRecordId && session.check_out_time) {
+        payload.last_punch_id = rawPunchRecordId;
+        payload.machine_check_out_ts = machineTimestampStr;
+      }
+
+      await supabase.from('attendance_records').upsert([payload], { onConflict: 'id' });
     } catch (_) {}
   }
 
-
   /**
-   * Loads the active timetable rules configured in Supabase by ZKTime.Net Timetable UI
+   * Recalculates attendance_daily_summary strictly from all raw machine punches
+   * for the given employee on a specific IST attendance date.
    */
+  public static async recalculateDailySummaryFromRawPunches(
+    companyId: string,
+    empUuid: string,
+    empCode: string,
+    empName: string,
+    dept: string,
+    dateStrIST: string
+  ): Promise<any> {
+    const dayRange = getAttendanceDayRange(dateStrIST);
+
+    // Fetch all raw punches for this employee within the IST business day range (startUTC -> endUTC)
+    // Primary sort: event_time_utc ASC. Secondary sort: machine_log_id ASC
+    const { data: rawPunches, error } = await supabase
+      .from('biometric_raw_punches')
+      .select('*')
+      .eq('company_id', companyId)
+      .or(`employee_id.eq.${empUuid},employee_id.eq.${empCode}`)
+      .gte('event_time_utc', dayRange.startUTC)
+      .lte('event_time_utc', dayRange.endUTC)
+      .order('event_time_utc', { ascending: true })
+      .order('machine_log_id', { ascending: true });
+
+    if (error) {
+      console.warn('⚠️ [AttendanceProcessor] Error querying biometric_raw_punches:', error.message);
+    }
+
+    const punches = rawPunches || [];
+    if (punches.length === 0) {
+      console.log(`ℹ️ [AttendanceProcessor] No raw punches found for ${empName} (${empCode}) on ${dateStrIST}.`);
+      return null;
+    }
+
+    const firstPunch = punches[0];
+    const sourcePunchIds = punches.map((p) => p.id);
+
+    let summaryPayload: any;
+
+    if (punches.length === 1) {
+      // SINGLE-PUNCH RULE:
+      // Check-In = First Punch
+      // Check-Out = NULL (Dash / Working)
+      // Status = WORKING
+      // first_punch_id = RAW-1, last_punch_id = NULL
+      summaryPayload = {
+        company_id: companyId,
+        employee_id: empCode,
+        employee_name: empName,
+        department: dept,
+        attendance_date: dateStrIST,
+        first_punch_id: firstPunch.id,
+        last_punch_id: null,
+        source_punch_ids: sourcePunchIds,
+        first_check_in_utc: firstPunch.event_time_utc,
+        first_check_in_machine_ts: firstPunch.machine_timestamp,
+        last_check_out_utc: null,
+        last_check_out_machine_ts: null,
+        gross_working_minutes: 0,
+        break_minutes: 0,
+        lunch_minutes: 0,
+        net_working_minutes: 0,
+        late_minutes: 0,
+        early_out_minutes: 0,
+        overtime_minutes: 0,
+        payable_hours: 0,
+        attendance_status: 'WORKING',
+        total_punches: 1,
+        updated_at: new Date().toISOString(),
+      };
+    } else {
+      // TWO / MULTI-PUNCH RULE:
+      // Check-In = First Punch
+      // Check-Out = Last Punch
+      // Status = CHECKED OUT
+      const lastPunch = punches[punches.length - 1];
+      const startMs = new Date(firstPunch.event_time_utc).getTime();
+      const endMs = new Date(lastPunch.event_time_utc).getTime();
+      const grossMins = Math.max(0, Math.round((endMs - startMs) / (1000 * 60)));
+
+      // 1 hour lunch deduction if gross working hours >= 4 hours
+      const lunchMins = grossMins >= 240 ? 60 : 0;
+      const netMins = Math.max(0, grossMins - lunchMins);
+      const payableHours = +(netMins / 60).toFixed(2);
+
+      summaryPayload = {
+        company_id: companyId,
+        employee_id: empCode,
+        employee_name: empName,
+        department: dept,
+        attendance_date: dateStrIST,
+        first_punch_id: firstPunch.id,
+        last_punch_id: lastPunch.id,
+        source_punch_ids: sourcePunchIds,
+        first_check_in_utc: firstPunch.event_time_utc,
+        first_check_in_machine_ts: firstPunch.machine_timestamp,
+        last_check_out_utc: lastPunch.event_time_utc,
+        last_check_out_machine_ts: lastPunch.machine_timestamp,
+        gross_working_minutes: grossMins,
+        break_minutes: 0,
+        lunch_minutes: lunchMins,
+        net_working_minutes: netMins,
+        late_minutes: 0,
+        early_out_minutes: 0,
+        overtime_minutes: netMins > 480 ? netMins - 480 : 0,
+        payable_hours: payableHours,
+        attendance_status: 'CHECKED OUT',
+        total_punches: punches.length,
+        updated_at: new Date().toISOString(),
+      };
+    }
+
+    // Upsert into attendance_daily_summary
+    const { data: summaryData, error: summaryErr } = await supabase
+      .from('attendance_daily_summary')
+      .upsert([summaryPayload], { onConflict: 'company_id,employee_id,attendance_date' })
+      .select()
+      .maybeSingle();
+
+    if (summaryErr) {
+      console.warn('⚠️ [AttendanceProcessor] Upsert daily summary error:', summaryErr.message);
+    }
+
+    // Synchronize legacy attendance_records for web dashboard compatibility without same-timestamp bugs
+    try {
+      const recId = `LOG-${dateStrIST}-${empCode}`;
+      const recPayload: any = {
+        id: recId,
+        employee_id: empCode,
+        employee_name: empName,
+        department: dept,
+        check_in_time: summaryPayload.first_check_in_machine_ts,
+        check_out_time: summaryPayload.last_check_out_machine_ts || null,
+        check_in_utc: summaryPayload.first_check_in_utc,
+        check_out_utc: summaryPayload.last_check_out_utc || null,
+        date: dateStrIST,
+        first_punch_id: summaryPayload.first_punch_id,
+        last_punch_id: summaryPayload.last_punch_id,
+        machine_check_in_ts: summaryPayload.first_check_in_machine_ts,
+        machine_check_out_ts: summaryPayload.last_check_out_machine_ts,
+        method: 'fingerprint',
+        status: summaryPayload.attendance_status === 'CHECKED OUT' ? 'present' : 'working',
+        device_name: firstPunch.device_name || `Identix Terminal (${firstPunch.device_ip})`,
+        confidence_score: 99.8,
+        location: 'HQ Main Terminal',
+        verified: true,
+      };
+      await supabase.from('attendance_records').upsert([recPayload], { onConflict: 'id' });
+    } catch (_) {}
+
+    return summaryData || summaryPayload;
+  }
+
   private static async loadActiveTimetable(): Promise<ShiftTimetable> {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('timetables')
         .select('*')
         .order('updated_at', { ascending: false })
         .limit(1);
       if (data && data.length > 0) {
         const tt = data[0];
+        const isActiveAdditional = tt.active_additional_setting !== false;
         return {
           id: tt.id,
           name: tt.name || 'Default Office Shift',
           check_in_time: tt.check_in_time || '09:00',
-          check_out_time: tt.check_out_time || '16:00',
-          check_in_start: tt.check_in_start_at || '07:00',
-          check_in_end: tt.check_in_end_at || '11:00',
-          check_out_start: tt.check_out_start_at || '16:00',
-          check_out_end: tt.check_out_end_at || '18:00',
+          check_out_time: tt.check_out_time || '18:00',
+          check_in_start: isActiveAdditional ? (tt.check_in_start_at || '00:00') : '00:00',
+          check_in_end: isActiveAdditional ? (tt.check_in_end_at || '23:59') : '23:59',
+          check_out_start: isActiveAdditional ? (tt.check_out_start_at || '00:00') : '00:00',
+          check_out_end: isActiveAdditional ? (tt.check_out_end_at || '23:59') : '23:59',
           late_allowed_mins: tt.late_in_mins ?? 5,
           early_out_allowed_mins: tt.early_out_mins ?? 5,
           lunch_start: '12:00',

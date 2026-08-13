@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { AttendanceProcessor, RawPunchLog } from '../sync/AttendanceProcessor';
 import { AppDataSource, OfflineBacklog } from '../db';
 import { employeeCache } from '../cache/EmployeeCache';
+import { parseDeviceTimeToUTC } from '../timezone';
 
 export interface QueuedPunchEvent extends RawPunchLog {
   id: string;
@@ -14,13 +15,17 @@ export class EventQueue extends EventEmitter {
   private static instance: EventQueue;
   private queue: QueuedPunchEvent[] = [];
   private processing = false;
-  private dedupeCache: Map<string, number> = new Map(); // key: "empId:ip", value: timestamp
-  private DEDUPE_WINDOW_MS = 5000; // 5 seconds deduplication window
+
+  /**
+   * In-memory dedup: key = "deviceIp:deviceUserId:machineTs" → receipt epoch ms
+   * Prevents duplicate real-time TCP pushes within a 10-second window.
+   */
+  private dedupeCache: Map<string, number> = new Map();
+  private readonly DEDUPE_WINDOW_MS = 10_000;
 
   private constructor() {
     super();
-    // Cleanup dedupe cache periodically
-    setInterval(() => this.cleanDedupeCache(), 10000);
+    setInterval(() => this.cleanDedupeCache(), 15_000);
   }
 
   public static getInstance(): EventQueue {
@@ -31,25 +36,43 @@ export class EventQueue extends EventEmitter {
   }
 
   /**
-   * Enqueue raw punch event from TCP packet (<5ms receive overhead)
+   * Enqueue a raw punch from TCP packet. Called <5ms after packet receipt.
+   *
+   * IMPORTANT: raw.machine_timestamp must be the exact device string (IST).
+   * raw.received_at_utc is the agent receipt time — these are separate concepts.
    */
   public push(raw: RawPunchLog): boolean {
     const rawUserIdStr = String(raw.device_user_id || '').trim();
     const numericUid = parseInt(rawUserIdStr.replace(/\D/g, ''), 10);
-    if (!rawUserIdStr || rawUserIdStr === '0' || rawUserIdStr === 'EMP-0' || isNaN(numericUid) || numericUid <= 0) {
+
+    if (!rawUserIdStr || rawUserIdStr === '0' || isNaN(numericUid) || numericUid <= 0) {
       return false;
     }
 
-    // 1. Deduplication check (5-second window in RAM)
-    const dedupeKey = `${rawUserIdStr}:${raw.device_ip}`;
-    const now = Date.now();
-    const lastPunch = this.dedupeCache.get(dedupeKey);
+    if (!raw.machine_timestamp) {
+      console.warn(`[EventQueue] Rejected punch for user ${rawUserIdStr}: missing machine_timestamp.`);
+      return false;
+    }
 
-    if (lastPunch && now - lastPunch < this.DEDUPE_WINDOW_MS) {
-      console.log(`⏱️ [EventQueue] Deduplicated punch for ${rawUserIdStr} at ${raw.device_ip} (within 5s window)`);
+    // In-memory dedup: same device + user + machine timestamp = same punch
+    const dedupeKey = `${raw.device_ip}:${rawUserIdStr}:${raw.machine_timestamp}`;
+    const now = Date.now();
+    const lastSeen = this.dedupeCache.get(dedupeKey);
+
+    if (lastSeen && now - lastSeen < this.DEDUPE_WINDOW_MS) {
+      console.log(`⏱️ [EventQueue] Deduplicated punch for user ${rawUserIdStr} at ${raw.machine_timestamp}`);
       return false;
     }
     this.dedupeCache.set(dedupeKey, now);
+
+    // Compute UTC from machine timestamp (Luxon explicit IST parse)
+    let eventTimeUtc: string;
+    try {
+      eventTimeUtc = parseDeviceTimeToUTC(raw.machine_timestamp);
+    } catch {
+      console.warn(`[EventQueue] Could not parse machine_timestamp "${raw.machine_timestamp}" — rejecting.`);
+      return false;
+    }
 
     const event: QueuedPunchEvent = {
       ...raw,
@@ -60,23 +83,25 @@ export class EventQueue extends EventEmitter {
 
     // O(1) RAM employee resolution for zero-latency Socket.IO broadcast
     const cachedEmp = employeeCache.get(rawUserIdStr);
-    if (cachedEmp && cachedEmp.name && cachedEmp.name.toLowerCase().includes('employee 0')) {
-      return false;
-    }
-    const resolvedName = cachedEmp ? cachedEmp.name : `EMP-${numericUid}`;
+    const resolvedName = cachedEmp?.name || `Device User ${numericUid}`;
 
-    // 2. IMMEDIATE (<20ms) Realtime Broadcast over Socket.IO before DB write!
+    // ── Immediate (<20ms) broadcast with machine timestamp ─────────────────
+    // The UI receives machine_timestamp so it can display the exact punch time
+    // without waiting for the DB write to complete.
     this.emit('attendance:new', {
-      id: event.id,
-      device_user_id: rawUserIdStr,
-      employee_id: cachedEmp?.employee_code || rawUserIdStr,
-      employee_name: resolvedName,
-      department: cachedEmp?.department || 'Engineering',
-      device_ip: raw.device_ip,
-      device_name: raw.device_name || `Identix K90 Pro (${raw.device_ip})`,
-      event_time: raw.event_time,
-      verification_type: raw.verification_type || 'fingerprint',
-      received_at: new Date().toISOString(),
+      id:                event.id,
+      device_user_id:    rawUserIdStr,
+      employee_id:       cachedEmp?.employee_code || rawUserIdStr,
+      employee_name:     resolvedName,
+      department:        cachedEmp?.department || 'Engineering',
+      device_ip:         raw.device_ip,
+      device_name:       raw.device_name || `Biometric Terminal (${raw.device_ip})`,
+      // machine_timestamp: exact IST string from device — display this in UI
+      machine_timestamp: raw.machine_timestamp,
+      // event_time_utc: for ordering/comparison only — do NOT display as punch time
+      event_time_utc:    eventTimeUtc,
+      verification_type: raw.verification_type || 'FINGERPRINT',
+      received_at_utc:   raw.received_at_utc || new Date().toISOString(),
     });
 
     this.queue.push(event);
@@ -95,9 +120,7 @@ export class EventQueue extends EventEmitter {
       try {
         await AttendanceProcessor.processPunch(event);
       } catch (err: any) {
-        console.error(`❌ [EventQueue] Failed to process punch event ${event.id}:`, err?.message || err);
-
-        // Fallback to local SQLite Offline Backlog buffer
+        console.error(`❌ [EventQueue] Failed to process punch ${event.id}:`, err?.message || err);
         await this.bufferOffline(event);
       }
     }
@@ -111,16 +134,17 @@ export class EventQueue extends EventEmitter {
       const record = new OfflineBacklog();
       record.id = event.id;
       record.device_ip = event.device_ip;
-      record.device_user_id = String(event.device_user_id);
-      record.event_time = new Date(event.event_time).toISOString();
-      record.verification_type = event.verification_type || 'fingerprint';
+      record.machine_timestamp = event.machine_timestamp || (event.event_time ? String(event.event_time) : new Date().toISOString());
+      record.event_time_utc = event.received_at_utc || '';
+      record.machine_log_id = event.machine_log_id || '';
+      record.verification_type = event.verification_type || 'FINGERPRINT';
       record.device_name = event.device_name || 'Biometric Terminal';
+      record.raw_payload = event.raw_payload || '';
       record.status = 'PENDING';
       record.retry_count = event.retry_count + 1;
       record.created_at = new Date().toISOString();
-
       await repo.save(record);
-      console.warn(`📦 [EventQueue] Buffered punch ${event.id} into local SQLite offline queue.`);
+      console.warn(`📦 [EventQueue] Buffered punch ${event.id} to SQLite offline queue.`);
     } catch (dbErr: any) {
       console.error(`❌ [EventQueue] Critical: Could not write offline buffer:`, dbErr?.message || dbErr);
     }
@@ -129,7 +153,7 @@ export class EventQueue extends EventEmitter {
   private cleanDedupeCache() {
     const now = Date.now();
     for (const [key, ts] of this.dedupeCache.entries()) {
-      if (now - ts > this.DEDUPE_WINDOW_MS) {
+      if (now - ts > this.DEDUPE_WINDOW_MS * 2) {
         this.dedupeCache.delete(key);
       }
     }

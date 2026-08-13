@@ -23,52 +23,48 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /attendance/reset-engine - Reset Attendance Engine & Rebuild sessions from raw attendance_events
+// POST /attendance/reset-engine - Reset Attendance Engine & Rebuild summaries from biometric_raw_punches
 router.post('/reset-engine', async (req, res) => {
   try {
-    const TODAY_STR = new Date().toISOString().split('T')[0];
+    const TODAY_STR = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-    console.log(`🔄 [ResetEngine] Starting rebuild of attendance_sessions from raw attendance_events...`);
+    console.log(`🔄 [ResetEngine] Starting rebuild of attendance_daily_summary from biometric_raw_punches for date: ${TODAY_STR}...`);
 
-    // 1. Delete calculated sessions for today onwards
-    const { error: delErr } = await supabase
-      .from('attendance_sessions')
-      .delete()
-      .gte('session_date', TODAY_STR);
+    // Fetch distinct employee_id values present in biometric_raw_punches for today
+    const { data: rawPunches, error: rawErr } = await supabase
+      .from('biometric_raw_punches')
+      .select('employee_id, company_id')
+      .not('employee_id', 'is', null);
 
-    if (delErr) {
-      console.warn(`[ResetEngine] Warning during delete session:`, delErr.message);
-    }
+    if (rawErr) throw rawErr;
 
-    // 2. Fetch all raw events for today from attendance_events
-    const { data: rawEvents, error: evErr } = await supabase
-      .from('attendance_events')
-      .select('*')
-      .gte('event_time', `${TODAY_STR}T00:00:00.000Z`)
-      .order('event_time', { ascending: true });
-
-    if (evErr) throw evErr;
-
+    // Get unique employee IDs
+    const empIds = [...new Set((rawPunches || []).map((p: any) => p.employee_id))];
     let processedCount = 0;
-    if (rawEvents && rawEvents.length > 0) {
-      for (const ev of rawEvents) {
-        if (ev.employee_id) {
-          await AttendanceProcessor.processPunch({
-            device_user_id: ev.employee_id,
-            event_time: new Date(ev.event_time),
-            verification_type: ev.method || 'fingerprint',
-            device_ip: ev.device || '192.168.1.56',
-            device_name: ev.device || 'Identix K90 Pro',
-          });
-          processedCount++;
-        }
-      }
+
+    for (const empId of empIds) {
+      // Lookup employee info
+      const { data: emp } = await supabase
+        .from('employees')
+        .select('id, employee_code, name, department')
+        .or(`id.eq.${empId},employee_code.eq.${empId}`)
+        .maybeSingle();
+
+      const empCode = emp ? (emp.employee_code || emp.id) : empId;
+      const empUuid = emp ? emp.id : empId;
+      const empName = emp ? emp.name : `Employee ${empId}`;
+      const dept = emp ? (emp.department || 'Engineering') : 'Engineering';
+
+      await AttendanceProcessor.recalculateDailySummaryFromRawPunches(
+        'COMP-001', empUuid, empCode, empName, dept, TODAY_STR
+      );
+      processedCount++;
     }
 
-    console.log(`✅ [ResetEngine] Successfully rebuilt ${processedCount} sessions from attendance_events.`);
+    console.log(`✅ [ResetEngine] Successfully rebuilt ${processedCount} daily summaries from biometric_raw_punches.`);
     res.json({
       success: true,
-      message: `Reset Attendance Engine completed. Rebuilt ${processedCount} sessions from raw events.`,
+      message: `Reset Attendance Engine completed. Rebuilt ${processedCount} daily summaries from raw machine punches.`,
       processedCount,
     });
   } catch (err: any) {

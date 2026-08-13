@@ -32,8 +32,26 @@ export class AttendanceCache {
   @Column()
   deviceUserId!: string;
 
+  /**
+   * Raw machine timestamp string exactly as received from device
+   * e.g. "2026-08-13 09:20:59"
+   * NEVER store a UTC or server timestamp here.
+   */
   @Column()
   recordTime!: string;
+
+  /**
+   * machine_timestamp preserves the exact device local string (IST).
+   * Kept separately from recordTime for clarity.
+   */
+  @Column({ nullable: true })
+  machineTimestamp!: string;
+
+  @Column({ nullable: true })
+  machineLogId!: string;
+
+  @Column({ type: 'text', nullable: true })
+  rawPayload!: string;
 
   @Column()
   ip!: string;
@@ -74,14 +92,28 @@ export class OfflineBacklog {
   @Column()
   device_user_id!: string;
 
+  /**
+   * Exact machine timestamp string preserved (IST) e.g. "2026-08-13 09:20:59"
+   * Used to reconstruct biometric_raw_punches on reconnect.
+   */
   @Column()
-  event_time!: string;
+  machine_timestamp!: string;
+
+  /** UTC equivalent of machine_timestamp — for ordering only */
+  @Column({ nullable: true })
+  event_time_utc!: string;
+
+  @Column({ nullable: true })
+  machine_log_id!: string;
 
   @Column({ nullable: true })
   verification_type!: string;
 
   @Column({ nullable: true })
   device_name!: string;
+
+  @Column({ type: 'text', nullable: true })
+  raw_payload!: string;
 
   @Column({ default: 'PENDING' })
   status!: string;

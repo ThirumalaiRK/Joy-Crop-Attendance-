@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
+    "@hrms/biometrics-sdk": "workspace:*",
     "@radix-ui/react-checkbox": "^1.3.11",
     "@radix-ui/react-slot": "^1.3.3",
     "@reduxjs/toolkit": "^2.12.0",

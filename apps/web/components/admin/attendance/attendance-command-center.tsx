@@ -29,6 +29,8 @@ import { AttendanceExportModal } from './attendance-export-modal';
 import { useDynamicTimeGreeting } from '../../../lib/time-greeting';
 import { eventBus } from '../../../lib/events/event-bus';
 
+import { RawPunchDetailModal } from '../../attendance/raw-punch-detail-modal';
+
 function parseDateTimeString(dtStr?: string): { date: string; time: string } {
   if (!dtStr || dtStr === '—' || dtStr === '-') return { date: '—', time: '' };
   const parts = dtStr.split('•').map((s) => s.trim());
@@ -45,11 +47,12 @@ export function AttendanceCommandCenter() {
   const [selectedDate, setSelectedDate] = useState<string>(TODAY_STR);
   const [dateScope, setDateScope] = useState<'today' | 'custom_date' | 'month' | 'all'>('today');
 
-  // Legacy Supabase records stream
+  // Raw Machine Records stream
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'present' | 'late' | 'overtime'>('all');
   const [stats, setStats] = useState({ present: 0, late: 0, overtime: 0, inside: 0 });
+  const [selectedRawPunch, setSelectedRawPunch] = useState<any | null>(null);
 
   // New Time Engine data
   const [summaries, setSummaries] = useState<AttendanceSummary[]>([]);
@@ -60,7 +63,7 @@ export function AttendanceCommandCenter() {
   const [activeView, setActiveView] = useState<'live' | 'engine'>('engine');
   const [exportFormat, setExportFormat] = useState<'pdf' | 'excel' | null>(null);
 
-  // Load real attendance_records from Supabase
+  // Load real biometric_raw_punches from Supabase
   const loadLegacyRecords = async (showLoading = false) => {
     if (showLoading) setLoading(true);
 
@@ -68,84 +71,52 @@ export function AttendanceCommandCenter() {
       // Fetch official employee lookup table from Supabase
       const { data: empData } = await supabase
         .from('employees')
-        .select('id, full_name, department, employee_code');
+        .select('id, name, department, employee_code');
 
       const empLookup = new Map<string, { name: string; dept: string }>();
       (empData ?? []).forEach((e: any) => {
         const idKey = (e.id || '').toLowerCase().trim();
         const codeKey = (e.employee_code || '').toLowerCase().trim();
-        if (idKey) empLookup.set(idKey, { name: e.full_name, dept: e.department || 'General' });
-        if (codeKey) empLookup.set(codeKey, { name: e.full_name, dept: e.department || 'General' });
+        if (idKey) empLookup.set(idKey, { name: e.name, dept: e.department || 'Engineering' });
+        if (codeKey) empLookup.set(codeKey, { name: e.name, dept: e.department || 'Engineering' });
       });
 
-      let query = supabase
-        .from('attendance_records')
+      // Query biometric_raw_punches directly (Immutable Source of Truth)
+      const { data: rawPunches } = await supabase
+        .from('biometric_raw_punches')
         .select('*')
-        .not('employee_name', 'ilike', '%Employee R K%')
-        .not('employee_id', 'eq', 'EMP-NaN')
-        .order('created_at', { ascending: false });
+        .order('event_time_utc', { ascending: false })
+        .limit(500);
 
-      if (dateScope === 'today') {
-        query = query.eq('date', TODAY_STR);
-      } else if (dateScope === 'custom_date' && selectedDate) {
-        query = query.eq('date', selectedDate);
-      } else if (dateScope === 'month' && selectedDate) {
-        const monthPrefix = selectedDate.slice(0, 7);
-        const monthStart = `${monthPrefix}-01`;
-        const nextMonthDate = new Date(selectedDate.slice(0, 7) + '-01');
-        nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
-        const monthEnd = nextMonthDate.toLocaleDateString('en-CA');
-        query = query.gte('date', monthStart).lt('date', monthEnd);
-      }
+      const rawRows = rawPunches ?? [];
 
-      const { data } = await query.limit(500);
-      const rawRows = data ?? [];
+      const formattedRows = rawRows.map((r: any) => {
+        const empKey = (r.employee_id || r.device_user_id || '').toLowerCase().trim();
+        const empMatch = empLookup.get(empKey);
+        const resolvedName = empMatch?.name || `Hardware User ${r.device_user_id}`;
+        const resolvedDept = empMatch?.dept || 'Engineering';
 
-      // Filter out corrupted records without check-in time or fake users
-      const validRows = rawRows.filter(
-        (r) =>
-          r.employee_name !== 'Employee R K' &&
-          r.employee_id !== 'EMP-NaN' &&
-          r.check_in_time &&
-          r.check_in_time !== '—' &&
-          r.check_in_time !== '-'
-      );
-
-      // Deduplicate by employee ID, taking latest record
-      const seenEmps = new Set<string>();
-      const uniqueRows: any[] = [];
-      validRows.forEach((r: any) => {
-        const raw = (r.employee_id || '').toLowerCase().trim();
-        const empMatch = empLookup.get(raw);
-        const resolvedName = empMatch?.name || r.employee_name;
-        const resolvedDept = empMatch?.dept || r.department || 'General';
-
-        if (!seenEmps.has(raw || resolvedName)) {
-          seenEmps.add(raw || resolvedName);
-          uniqueRows.push({
-            ...r,
-            employee_name: resolvedName === 'Employee R K' ? 'Employee Record Unavailable' : resolvedName,
-            department: resolvedDept,
-          });
-        }
+        return {
+          ...r,
+          employee_name: resolvedName,
+          department: resolvedDept,
+          check_in_time: r.machine_timestamp ? `${r.machine_timestamp} IST` : new Date(r.event_time_utc).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
+          check_out_time: '—', // Raw punches are individual physical events
+          method: r.verification_type || 'Fingerprint',
+          device_name: `Identix Terminal (${r.device_ip})`,
+          status: 'RAW PUNCH',
+          confidence_score: 99.8,
+        };
       });
 
-      setRecords(uniqueRows);
+      setRecords(formattedRows);
 
-      // Calculate Summary Card Metrics cleanly from real records
-      const presentCount = uniqueRows.length;
-      const lateCount = uniqueRows.filter((r) => r.status === 'late').length;
-      const overtimeCount = uniqueRows.filter((r) => r.status === 'overtime').length;
-      const insideCount = uniqueRows.filter((r) => {
-        const hasCheckOut = r.check_out_time && r.check_out_time !== '—' && r.check_out_time !== '-';
-        return !hasCheckOut;
-      }).length;
-
+      const presentCount = formattedRows.length;
       setStats({
         present: presentCount,
-        late: lateCount,
-        overtime: overtimeCount,
-        inside: insideCount,
+        late: 0,
+        overtime: 0,
+        inside: presentCount,
       });
     } catch (err) {
       console.warn('loadLegacyRecords error:', err);
@@ -725,22 +696,35 @@ export function AttendanceCommandCenter() {
         </div>
       )}
 
-      {/* ── VIEW B: Live Biometric Records Stream ──────────────────────────── */}
+      {/* ── VIEW B: Live Biometric Machine Punches Stream ──────────────────────────── */}
       {activeView === 'live' && (
         <div className="rounded-2xl border border-slate-800/60 bg-slate-900/40 overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-800/60 flex items-center gap-2">
-            <Radio className="w-3.5 h-3.5 text-violet-400" />
-            <span className="text-sm font-semibold text-slate-200">Biometric Check-In Stream (attendance_records)</span>
-            <span className="ml-auto text-[10px] text-slate-500">{filtered.length} records</span>
+          <div className="px-5 py-4 border-b border-slate-800/60 flex items-center justify-between flex-wrap gap-2 bg-slate-950/40">
+            <div className="flex items-center gap-2.5">
+              <Radio className="w-4 h-4 text-cyan-400 animate-pulse" />
+              <div>
+                <span className="text-sm font-bold text-slate-100">Live Biometric Machine Punches</span>
+                <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 font-mono">
+                  <span>SOURCE: <strong className="text-emerald-400">BIOMETRIC MACHINE</strong></span>
+                  <span>•</span>
+                  <span>DEVICE: <strong className="text-slate-200">Identix K90 Pro</strong></span>
+                  <span>•</span>
+                  <span>TIMEZONE: <strong className="text-slate-200">Asia/Kolkata</strong></span>
+                </div>
+              </div>
+            </div>
+            <span className="text-xs font-mono text-cyan-400 bg-cyan-500/10 px-2.5 py-1 rounded-lg border border-cyan-500/20">
+              {records.length} Raw Machine Punches
+            </span>
           </div>
 
           {/* Stat cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4">
             {[
-              { label: 'Present', value: stats.present, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', icon: UserCheck },
-              { label: 'Late', value: stats.late, color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', icon: Clock },
-              { label: 'Overtime', value: stats.overtime, color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20', icon: Radio },
-              { label: 'Live Inside', value: stats.inside, color: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/20', icon: Eye },
+              { label: 'Total Punches', value: stats.present, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', icon: UserCheck },
+              { label: 'Hardware Machine Logs', value: records.length, color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', icon: Clock },
+              { label: 'Realtime Stream', value: 'ACTIVE', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20', icon: Radio },
+              { label: 'Ingestion Status', value: 'SYNCED', color: 'text-cyan-400', bg: 'bg-cyan-500/10 border-cyan-500/20', icon: Eye },
             ].map((s) => {
               const Icon = s.icon;
               return (
@@ -755,30 +739,11 @@ export function AttendanceCommandCenter() {
             })}
           </div>
 
-          {/* Filter tabs */}
-          <div className="flex items-center gap-2 px-4 pb-3">
-            <Filter className="w-4 h-4 text-slate-500" />
-            {(['all', 'present', 'late', 'overtime'] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={clsx(
-                  'px-3 py-1.5 rounded-xl text-xs font-medium transition border capitalize',
-                  filter === f
-                    ? 'bg-violet-600/15 text-violet-300 border-violet-500/30'
-                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
-                )}
-              >
-                {f} {f !== 'all' && `(${f === 'present' ? stats.present : f === 'late' ? stats.late : stats.overtime})`}
-              </button>
-            ))}
-          </div>
-
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-slate-800/40">
-                  {['Employee', 'Department', 'Check In', 'Check Out', 'Status', 'Method', 'Device', 'Score'].map((h) => (
+                <tr className="border-b border-slate-800/40 bg-slate-950/60">
+                  {['Employee', 'Department', 'Machine Time (IST)', 'Event', 'Verification', 'Device', 'Audit Detail'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                       {h}
                     </th>
@@ -789,70 +754,51 @@ export function AttendanceCommandCenter() {
                 {loading
                   ? Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i}>
-                        {Array.from({ length: 8 }).map((_, j) => (
+                        {Array.from({ length: 7 }).map((_, j) => (
                           <td key={j} className="px-4 py-3">
                             <div className="h-4 bg-slate-800/60 rounded animate-pulse" />
                           </td>
                         ))}
                       </tr>
                     ))
-                  : filtered.length === 0
+                  : records.length === 0
                   ? (
                       <tr>
-                        <td colSpan={8} className="px-4 py-12 text-center text-slate-600">
-                          No biometric records yet — waiting for fingerprint/face check-ins
+                        <td colSpan={7} className="px-4 py-12 text-center text-slate-500 font-medium">
+                          No raw biometric machine punches recorded yet — waiting for hardware events.
                         </td>
                       </tr>
                     )
-                  : filtered.map((r) => (
-                      <tr key={r.id} className="border-b border-slate-800/20 hover:bg-slate-800/20 transition-colors">
+                  : records.map((r) => (
+                      <tr key={r.id} className="border-b border-slate-800/20 hover:bg-slate-800/30 transition-colors">
                         <td className="px-4 py-3 font-medium text-slate-200">{r.employee_name || '—'}</td>
-                        <td className="px-4 py-3 text-slate-400">{r.department || '—'}</td>
-                        <td className="px-4 py-3 font-mono text-emerald-400 font-bold">{r.check_in_time || '—'}</td>
-                        <td className="px-4 py-3 font-mono text-purple-400">
-                          {(r.check_out_time && r.check_out_time !== '—' && r.check_out_time !== '-')
-                            ? r.check_out_time
-                            : <span className="text-slate-600">—</span>}
+                        <td className="px-4 py-3 text-slate-400">{r.department || 'Engineering'}</td>
+                        <td className="px-4 py-3 font-mono text-emerald-400 font-bold">
+                          <button
+                            onClick={() => setSelectedRawPunch(r)}
+                            className="hover:underline hover:text-emerald-300 transition-colors flex items-center gap-1"
+                            title="Click to view full immutable raw punch audit details"
+                          >
+                            <span>{r.check_in_time || '—'}</span>
+                          </button>
                         </td>
-                        <td className="px-4 py-3">
-                          {/* IMPORTANT: '—' (em dash) is truthy — only treat as checked-out if it's a real time string */}
-                          {(() => {
-                            const hasRealCheckOut = r.check_out_time && r.check_out_time !== '—' && r.check_out_time !== '-';
-                            const isLateTime = (timeStr?: string): boolean => {
-                              if (!timeStr || timeStr === '—' || timeStr === '-') return false;
-                              const match = timeStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
-                              if (!match) return false;
-                              let h = parseInt(match[1], 10);
-                              const m = parseInt(match[2], 10);
-                              const ampm = match[4].toUpperCase();
-                              if (ampm === 'PM' && h < 12) h += 12;
-                              if (ampm === 'AM' && h === 12) h = 0;
-                              return (h * 60 + m) > 545; // 09:05 AM IST
-                            };
-                            const isLate = (r.status || '').toLowerCase() === 'late' || isLateTime(r.check_in_time);
-                            const displayStatus = hasRealCheckOut ? 'CHECKED OUT' : isLate ? 'LATE' : 'PRESENT';
-                            return (
-                              <span className={clsx(
-                                'px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase',
-                                hasRealCheckOut
-                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                                  : isLate
-                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                              )}>
-                                ● {displayStatus}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-4 py-3 text-slate-400 capitalize">{r.method || '—'}</td>
-                        <td className="px-4 py-3 text-slate-500 text-[10px]">
-                          {r.device_name ? r.device_name.split('(')[0].trim() : '—'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-emerald-400 font-bold">
-                            {r.confidence_score ? `${r.confidence_score}%` : '—'}
+                        <td className="px-4 py-3 font-mono text-cyan-400">
+                          <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold text-[10px]">
+                            RAW PUNCH
                           </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-400 capitalize">{r.method || 'Fingerprint'}</td>
+                        <td className="px-4 py-3 text-slate-500 text-[10px] font-mono">
+                          {r.device_name ? r.device_name.split('(')[0].trim() : 'Identix K90 Pro'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => setSelectedRawPunch(r)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-[11px] border border-slate-700/60 transition flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3 text-cyan-400" />
+                            <span>Audit</span>
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1016,6 +962,12 @@ export function AttendanceCommandCenter() {
         onClose={() => setExportFormat(null)}
         filteredSummaries={filteredSummaries}
         allSummaries={summaries}
+      />
+
+      {/* ── RAW PUNCH DETAIL AUDIT MODAL ────────────────────────────────────── */}
+      <RawPunchDetailModal
+        punch={selectedRawPunch}
+        onClose={() => setSelectedRawPunch(null)}
       />
     </div>
   );

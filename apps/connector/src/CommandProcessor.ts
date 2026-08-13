@@ -45,7 +45,7 @@ export class CommandProcessor {
           const port = cmd.payload?.port || 4370;
 
           // Connect to hardware device
-          let zkDevice: ZKTecoDevice | null = deviceManager.getConnectedDevice(deviceIp);
+          let zkDevice: ZKTecoDevice | null = deviceManager.getConnectedDevice(deviceIp) || null;
           if (!zkDevice) {
             zkDevice = new ZKTecoDevice(deviceIp, port);
             const ok = await zkDevice.connect();

@@ -460,18 +460,11 @@ export function AdminEmployees() {
 
   const handleOpenEnrollModal = openEnrollModal;
 
-  /**
-   * Push a single employee's profile + fingerprint templates to the ZKTeco device via TCP.
-   * Calls POST /api/device/users/push on the connector (via Next.js proxy route if available,
-   * or directly to CONNECTOR_BASE).
-   */
-  const CONNECTOR_BASE = process.env.NEXT_PUBLIC_CONNECTOR_URL || 'http://localhost:4000';
-
   const handlePushToDevice = async (emp: Employee) => {
     const rawCode = emp.employeeCode || emp.id || '';
-    const tid = toast.loading(`📱 Pushing ${emp.name} to device (${rawCode})...`);
+    const tid = toast.loading(`📱 Pushing ${emp.name} to biometric machine (${rawCode})...`);
     try {
-      const res = await fetch(`${CONNECTOR_BASE}/api/device/users/push`, {
+      const res = await fetch('/api/admin/device/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -480,19 +473,40 @@ export function AdminEmployees() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
 
-      const emp0 = data.results?.[0];
+      const emp0 = data.data?.results?.[0] || data.results?.[0];
       if (emp0) {
-        const templateMsg = emp0.templatesFound > 0
-          ? ` + ${emp0.templatesPushed}/${emp0.templatesFound} fingerprint(s)`
-          : ' (no fingerprints stored — enroll physically)';
-        toast.success(`✅ ${emp.name} pushed to device${templateMsg}`, { id: tid, duration: 6000 });
+        const templateMsg = emp0.templatesPushed > 0
+          ? ` + ${emp0.templatesPushed} fingerprint(s)`
+          : ' (profile pushed — enroll fingerprint physically)';
+        toast.success(`✅ ${emp.name} pushed to machine${templateMsg}`, { id: tid, duration: 6000 });
       } else {
-        toast.success(data.message || `✅ ${emp.name} pushed successfully`, { id: tid });
+        toast.success(data.message || `✅ ${emp.name} pushed to machine successfully`, { id: tid });
       }
     } catch (err: any) {
       toast.error(`❌ Push failed: ${err.message}`, { id: tid, duration: 8000 });
+    }
+  };
+
+  const handlePushAllToDevice = async () => {
+    if (employees.length === 0) return;
+    const tid = toast.loading(`📱 Pushing all ${employees.length} employees to biometric machine...`);
+    try {
+      const codes = employees.map((e) => e.employeeCode || e.id);
+      const res = await fetch('/api/admin/device/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: '192.168.1.56',
+          employeeCodes: codes,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
+      toast.success(data.message || `✅ All ${employees.length} employees pushed to biometric machine!`, { id: tid, duration: 7000 });
+    } catch (err: any) {
+      toast.error(`❌ Bulk push failed: ${err.message}`, { id: tid, duration: 8000 });
     }
   };
 
@@ -661,6 +675,8 @@ export function AdminEmployees() {
 
     if (res.success) {
       load(true);
+      // Auto-push employee to hardware biometric machine immediately (Zero manual work!)
+      handlePushToDevice(newEmp);
     } else {
       setFormError(res.error || 'Failed to create employee in Supabase DB.');
       setEmployees((prev) => prev.filter((e) => e.id !== newEmp.id && e.employeeCode !== newEmp.employeeCode));
@@ -701,8 +717,11 @@ export function AdminEmployees() {
     setSaving(false);
     setIsEditModalOpen(false);
 
+    // Auto-push updated employee profile to hardware biometric machine!
+    handlePushToDevice(updatedEmp);
+
     // Show Audit Broadcast Toast
-    setAuditNotification(`✓ Edited By THIRUMALAI R K • Designation: ${editData.designation} • Realtime Broadcast Completed`);
+    setAuditNotification(`✓ Edited By THIRUMALAI R K • Designation: ${editData.designation} • Realtime Hardware Broadcast Completed`);
     setTimeout(() => setAuditNotification(null), 4000);
 
     load(true);
@@ -814,6 +833,13 @@ export function AdminEmployees() {
             title="Manage Supabase Auth Credentials & Portal Access"
           >
             <Key className="w-4 h-4 text-amber-400" /> Auth & Portal Provisioning
+          </button>
+          <button
+            onClick={handlePushAllToDevice}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300 font-bold text-xs border border-cyan-500/30 transition shadow-lg"
+            title="Push all employees & fingerprints to the physical biometric machine over TCP"
+          >
+            <MonitorSmartphone className="w-4 h-4 text-cyan-400" /> Push All to Machine
           </button>
           <button
             onClick={openAddModal}

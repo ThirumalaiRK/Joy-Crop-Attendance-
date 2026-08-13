@@ -138,14 +138,15 @@ function eventToFeedItem(evt: EnterpriseEvent): FeedItem {
 function dbRowToFeedItem(row: any): FeedItem {
   const empName = row.employee_name || 'Unknown';
   const dept = row.department || 'Staff';
-  const isOut = !!row.check_out_time;
+  const isOut = !!(row.check_out_time && row.check_out_time !== '—' && row.check_out_time !== '-');
   const isoTime = row.created_at || new Date().toISOString();
+  const displayTime = isOut ? row.check_out_time : (row.check_in_time || formatFeedTime(isoTime));
   return {
     id: `db-${row.id}`,
     type: 'DB_RECORD',
     message: isOut ? `${empName} checked out` : `${empName} checked in`,
     detail: `${dept} · ${row.method || 'fingerprint'} · ${row.device_name?.split('(')[0]?.trim() || 'Device'}`,
-    time: row.check_in_time || formatFeedTime(isoTime),
+    time: displayTime,
     isoTime,
     color: isOut ? 'text-slate-400' : 'text-emerald-400',
     dotColor: isOut ? 'bg-slate-400' : 'bg-emerald-400',

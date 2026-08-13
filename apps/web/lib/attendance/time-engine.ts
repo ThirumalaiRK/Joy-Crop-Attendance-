@@ -112,7 +112,40 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
     const newStore: AttendanceEvent[] = [];
     const existingIds = new Set<string>();
 
-    // 1. Fetch attendance_events from Supabase
+    // 1. Fetch raw punches directly from biometric_raw_punches (Immutable Source of Truth)
+    const { data: rawPunches } = await supabase
+      .from('biometric_raw_punches')
+      .select('*')
+      .order('event_time_utc', { ascending: true });
+
+    if (rawPunches && rawPunches.length > 0) {
+      rawPunches.forEach((raw: any) => {
+        const rawEmpId = raw.employee_id || raw.device_user_id;
+        const resolved = employeeLookupCache.get(rawEmpId);
+        const finalEmpId = resolved?.id || rawEmpId;
+        const finalEmpName = resolved?.name || `Employee ${rawEmpId}`;
+
+        // Format IST time string directly from machine_timestamp or event_time_utc
+        const formattedTime = formatTimeAmPm(raw.event_time_utc);
+
+        newStore.push({
+          id: raw.id,
+          sessionId: `sess-${finalEmpId}`,
+          employeeId: finalEmpId,
+          employeeName: finalEmpName,
+          eventType: 'CHECK_IN',
+          eventTime: raw.event_time_utc,
+          formattedTime: raw.machine_timestamp ? `${raw.machine_timestamp} IST` : formattedTime,
+          device: raw.device_serial_number || `Identix Terminal (${raw.device_ip})`,
+          method: raw.verification_type || 'Fingerprint',
+          notes: `Raw Machine Punch (Log ID: ${raw.machine_log_id || 'N/A'})`,
+          ...(resolved?.dept ? { department: resolved.dept } : {}),
+        } as any);
+        existingIds.add(raw.id);
+      });
+    }
+
+    // 2. Fetch manual attendance_events from Supabase
     const { data: eventRows } = await supabase
       .from('attendance_events')
       .select('*')
@@ -138,140 +171,6 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
             notes: row.notes,
           });
           existingIds.add(row.id);
-        }
-      });
-    }
-
-    // 2. Fetch attendance_records from Supabase to sync biometric check-ins & check-outs
-    const { data: recordRows } = await supabase
-      .from('attendance_records')
-      .select('*')
-      .order('created_at', { ascending: true });
-
-    if (recordRows && recordRows.length > 0) {
-      recordRows.forEach((rec: any) => {
-        const rawEmpId = rec.employee_id || rec.id;
-        const rawEmpName = rec.employee_name || '';
-        const resolved = employeeLookupCache.get(rawEmpId) || employeeLookupCache.get(rawEmpName.toLowerCase()) || employeeLookupCache.get(rawEmpName);
-
-        const empId = resolved?.id || rawEmpId;
-        const empName = resolved?.name || (rawEmpName && !rawEmpName.startsWith('User ') ? rawEmpName : `Employee ${rawEmpId}`);
-        const recDept = resolved?.dept || rec.department || 'Staff';
-        const createdAt = rec.created_at || new Date().toISOString();
-
-        // Use the record's own `date` field, or derive IST date from created_at
-        // CRITICAL: Do NOT use createdAt.split('T')[0] — that's UTC date, not IST date.
-        // On Vercel (UTC server), records created after 6:30 PM IST would get the NEXT UTC day.
-        const recDateStr: string = rec.date && /^\d{4}-\d{2}-\d{2}$/.test(rec.date)
-          ? rec.date  // e.g. "2026-08-10"
-          : new Date(createdAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // → "YYYY-MM-DD" in IST
-
-
-        /**
-         * Convert a display time like "09:15 AM" or "05:34:40 PM" stored in IST
-         * into a proper UTC ISO timestamp. Since these strings are always saved in
-         * Asia/Kolkata (IST = UTC+5:30), we subtract 330 minutes to get UTC.
-         * This is safe on any server timezone (Vercel = UTC, local = IST).
-         */
-        function buildISOFromDisplayTime(displayTime: string, fallbackIso: string): string {
-          if (!displayTime || displayTime === '—' || displayTime === '-') return fallbackIso;
-          try {
-            // If displayTime is already a valid ISO timestamp, parse directly
-            if (/^\d{4}-\d{2}-\d{2}/.test(displayTime)) {
-              const d = new Date(displayTime);
-              if (!isNaN(d.getTime())) return d.toISOString();
-            }
-
-            // Parse "09:15 AM", "05:34:40 PM", "05:33 pm" → hours, minutes, optional seconds
-            const match = displayTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
-            if (match) {
-              let hours = parseInt(match[1], 10);
-              const minutes = parseInt(match[2], 10);
-              const seconds = match[3] ? parseInt(match[3], 10) : 0;
-              const ampm = match[4].toUpperCase();
-              if (ampm === 'PM' && hours < 12) hours += 12;
-              if (ampm === 'AM' && hours === 12) hours = 0;
-              // Treat the parsed time as IST (UTC+5:30).
-              // Build total minutes since midnight in IST, then subtract 330 to get UTC.
-              const istTotalMinutes = hours * 60 + minutes;
-              const utcTotalMinutes = istTotalMinutes - 330; // IST → UTC offset
-              // Handle day boundary
-              const utcDate = new Date(`${recDateStr}T00:00:00Z`);
-              utcDate.setUTCMinutes(utcDate.getUTCMinutes() + utcTotalMinutes);
-              utcDate.setUTCSeconds(seconds, 0);
-              return utcDate.toISOString();
-            }
-          } catch {}
-          return fallbackIso;
-        }
-
-        // Event record from attendance_records
-        if (rec.check_in_time) {
-          const checkInEvtId = `rec-${rec.status || 'in'}-${rec.id}`;
-          if (!existingIds.has(checkInEvtId)) {
-            // CRITICAL TIMEZONE FIX FOR VERCEL DEPLOYMENT:
-            // Always prefer real UTC created_at timestamp from DB (e.g. 2026-08-12T03:19:47.000Z).
-            // Converting real UTC timestamp to Asia/Kolkata timezone gives exact IST time (08:49:47 AM),
-            // regardless of whether Vercel server node process runs in UTC or IST!
-            const isIsoCreatedAt = Boolean(createdAt && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(createdAt));
-            const eventTime = isIsoCreatedAt
-              ? new Date(createdAt).toISOString()
-              : buildISOFromDisplayTime(rec.check_in_time, createdAt);
-
-            // Map status string to AttendanceEventType
-            let eventType: AttendanceEventType = 'CHECK_IN';
-            const s = (rec.status || '').toLowerCase();
-            if (s === 'on_break') eventType = 'BREAK_START';
-            else if (s === 'break_end') eventType = 'BREAK_END';
-            else if (s === 'on_lunch') eventType = 'LUNCH_START';
-            else if (s === 'lunch_end') eventType = 'LUNCH_END';
-            else if (s === 'in_meeting') eventType = 'MEETING_OUT';
-            else if (s === 'meeting_in') eventType = 'MEETING_IN';
-            else if (s === 'on_field_visit') eventType = 'FIELD_VISIT_START';
-            else if (s === 'field_visit_end') eventType = 'FIELD_VISIT_END';
-            else if (s === 'checked_out') eventType = 'CHECK_OUT';
-
-            newStore.push({
-              id: checkInEvtId,
-              sessionId: `sess-${empId}`,
-              employeeId: empId,
-              employeeName: empName,
-              eventType,
-              eventTime,
-              formattedTime: isIsoCreatedAt ? formatTimeAmPm(createdAt) : rec.check_in_time,
-              device: rec.device_name || 'Mantra MFS110 L1',
-              method: rec.method || 'Fingerprint',
-              notes: rec.notes || `Workforce Event (${rec.confidence_score ? rec.confidence_score + '%' : 'Verified'})`,
-              ...(recDept && recDept !== 'Staff' ? { department: recDept } : {}),
-            } as any);
-            existingIds.add(checkInEvtId);
-          }
-        }
-
-        // Check-out event from attendance_records
-        if (rec.check_out_time && rec.check_out_time !== '—' && rec.check_out_time !== '-') {
-          const checkOutEvtId = `rec-out-${rec.id}`;
-          if (!existingIds.has(checkOutEvtId)) {
-            const isIsoUpdatedAt = Boolean(rec.updated_at && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rec.updated_at));
-            const eventTime = isIsoUpdatedAt
-              ? new Date(rec.updated_at).toISOString()
-              : buildISOFromDisplayTime(rec.check_out_time, createdAt);
-
-            newStore.push({
-              id: checkOutEvtId,
-              sessionId: `sess-${empId}`,
-              employeeId: empId,
-              employeeName: empName,
-              eventType: 'CHECK_OUT',
-              eventTime,
-              formattedTime: isIsoUpdatedAt ? formatTimeAmPm(rec.updated_at) : rec.check_out_time,
-              device: rec.device_name || 'Mantra MFS110 L1',
-              method: rec.method || 'Fingerprint',
-              notes: `Biometric Check-Out (${rec.confidence_score ? rec.confidence_score + '%' : 'Verified'})`,
-              ...(recDept && recDept !== 'Staff' ? { department: recDept } : {}),
-            } as any);
-            existingIds.add(checkOutEvtId);
-          }
         }
       });
     }

@@ -80,8 +80,10 @@ export async function fetchAttendanceFromSupabase(): Promise<AttendanceRecord[]>
           employeeName: row.employee_name || 'THIRUMALAI R K',
           employeeAvatar: row.employee_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
           department: row.department || 'IT',
-          checkInTime: row.check_in_time || '09:00 AM',
-          checkOutTime: row.check_out_time,
+          checkInTime: row.machine_check_in_ts || row.check_in_time || '09:00 AM',
+          checkOutTime: row.machine_check_out_ts || row.check_out_time,
+          checkInUtc: row.check_in_utc,
+          checkOutUtc: row.check_out_utc,
           date: row.date || 'Today',
           method: row.method || 'fingerprint',
           status: row.status || 'present',
@@ -89,6 +91,8 @@ export async function fetchAttendanceFromSupabase(): Promise<AttendanceRecord[]>
           confidenceScore: row.confidence_score || 99.4,
           location: row.location || 'HQ Floor 5 Exec Lounge',
           verified: row.verified ?? true,
+          firstPunchId: row.first_punch_id,
+          lastPunchId: row.last_punch_id,
         }));
     }
   } catch (err) {
@@ -96,6 +100,55 @@ export async function fetchAttendanceFromSupabase(): Promise<AttendanceRecord[]>
   }
   return [];
 }
+
+/**
+ * Fetch raw biometric machine punches from Supabase for audit/debugging
+ */
+export async function fetchRawPunchesFromSupabase(employeeId?: string, limit: number = 50) {
+  try {
+    let query = supabase
+      .from('biometric_raw_punches')
+      .select('*')
+      .order('event_time_utc', { ascending: false })
+      .limit(limit);
+
+    if (employeeId) {
+      query = query.eq('employee_id', employeeId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Supabase fetch raw punches error:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.error('Supabase fetch raw punches exception:', err);
+    return [];
+  }
+}
+
+/**
+ * Fetch biometric sync state for all registered hardware devices
+ */
+export async function fetchBiometricSyncState() {
+  try {
+    const { data, error } = await supabase
+      .from('biometric_sync_state')
+      .select('*')
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      console.warn('Supabase fetch sync state error:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.error('Supabase fetch sync state exception:', err);
+    return [];
+  }
+}
+
 
 /**
  * Fetch real biometric devices from Supabase Database

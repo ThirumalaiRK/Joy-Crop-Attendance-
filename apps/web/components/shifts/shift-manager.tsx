@@ -279,7 +279,7 @@ export function ShiftManager() {
           break_duration_mins: editingBreak.break_duration_mins,
           deduct_type: editingBreak.deduct_type,
         }]);
-      } catch (_) {}
+      } catch (_) { }
     }
     toast.success(`Break rule "${editingBreak.break_name}" updated!`);
   };
@@ -306,11 +306,10 @@ export function ShiftManager() {
             <button
               key={tab.id}
               onClick={() => setActiveMenuTab(tab.id as any)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition ${
-                activeMenuTab === tab.id
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeMenuTab === tab.id
                   ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-md'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-              }`}
+                }`}
             >
               <tab.icon className="w-4 h-4" />
               <span>{tab.label}</span>
@@ -389,11 +388,10 @@ export function ShiftManager() {
                       setSelectedIndex(idx);
                       setTimetable(tt);
                     }}
-                    className={`w-full flex items-center justify-between p-3 rounded-xl text-left text-xs font-bold transition border ${
-                      selectedIndex === idx
+                    className={`w-full flex items-center justify-between p-3 rounded-xl text-left text-xs font-bold transition border ${selectedIndex === idx
                         ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
                         : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: tt.color || '#0066FF' }} />
@@ -441,7 +439,7 @@ export function ShiftManager() {
                 {/* Regular Mode Timings */}
                 <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-4 space-y-4">
                   <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Regular Mode Timings</div>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
                     <div className="flex items-center gap-3">
                       <label className="w-32 text-slate-400">Check-In Time:</label>
@@ -482,17 +480,37 @@ export function ShiftManager() {
 
                   {/* Active Additional Setting Box */}
                   <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-                    <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-200 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={timetable.active_additional_setting}
-                        onChange={(e) => setTimetable({ ...timetable, active_additional_setting: e.target.checked })}
-                        className="rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
-                      />
-                      <span>Active additional setting</span>
-                    </label>
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-200 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={timetable.active_additional_setting}
+                          onChange={(e) =>
+                            setTimetable({
+                              ...timetable,
+                              active_additional_setting: e.target.checked,
+                              ...(e.target.checked
+                                ? {}
+                                : {
+                                  check_in_start_at: '00:00',
+                                  check_in_end_at: '23:59',
+                                  check_out_start_at: '00:00',
+                                  check_out_end_at: '23:59',
+                                }),
+                            })
+                          }
+                          className="rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500 w-4 h-4"
+                        />
+                        <span className="text-sm">Active additional setting</span>
+                      </label>
+                      <span className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-slate-800/80 border border-slate-700/60 text-slate-300">
+                        {timetable.active_additional_setting
+                          ? '🔒 Time window boundaries active'
+                          : '⚡ Additional limits OFF — Employees entering at 12:00 PM or anytime can check in seamlessly'}
+                      </span>
+                    </div>
 
-                    {timetable.active_additional_setting && (
+                    {timetable.active_additional_setting ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono pt-2">
                         <div className="flex items-center gap-3">
                           <label className="w-36 text-slate-400">Check-In Start At:</label>
@@ -520,7 +538,7 @@ export function ShiftManager() {
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
                           <label className="w-36 text-slate-400">Check-In End At:</label>
                           <input
                             type="time"
@@ -531,9 +549,17 @@ export function ShiftManager() {
                           <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-bold text-[11px]">
                             {formatTo12Hr(timetable.check_in_end_at)}
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => setTimetable({ ...timetable, check_in_end_at: '23:59' })}
+                            className="px-2 py-1 rounded bg-violet-600/20 hover:bg-violet-600/40 border border-violet-500/30 text-violet-300 text-[10px] font-sans font-semibold transition"
+                            title="Set Check-In End At to 23:59 (Allow check-ins all day, including 12:00 PM)"
+                          >
+                            Set 23:59 (No Cutoff)
+                          </button>
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
                           <label className="w-36 text-slate-400">Check-Out End At:</label>
                           <input
                             type="time"
@@ -544,487 +570,499 @@ export function ShiftManager() {
                           <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-bold text-[11px]">
                             {formatTo12Hr(timetable.check_out_end_at)}
                           </span>
-                        </div>
-
-                        <div className="flex items-center gap-3 col-span-2 flex-wrap">
-                          <label className="w-36 text-slate-400">Calculate As:</label>
-                          <input
-                            type="number"
-                            value={timetable.calculate_as_mins}
-                            onChange={(e) => setTimetable({ ...timetable, calculate_as_mins: parseInt(e.target.value) || 0 })}
-                            className="h-8 w-24 rounded bg-slate-950 border border-slate-800 text-slate-100 font-bold px-2"
-                          />
-                          <span className="text-slate-400">Minutes</span>
-                          <span className="px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-bold text-[11px]">
-                            {formatMinsToHrs(timetable.calculate_as_mins)}
-                          </span>
-
-                          <span className="text-slate-500 ml-3">Late-In:</span>
-                          <input
-                            type="number"
-                            value={timetable.late_in_mins}
-                            onChange={(e) => setTimetable({ ...timetable, late_in_mins: parseInt(e.target.value) || 0 })}
-                            className="h-8 w-16 rounded bg-slate-950 border border-slate-800 text-amber-400 font-bold px-2"
-                          />
-                          <span className="text-slate-400">Mins (Grace)</span>
-
-                          <span className="text-slate-500 ml-3">Early-Out:</span>
-                          <input
-                            type="number"
-                            value={timetable.early_out_mins}
-                            onChange={(e) => setTimetable({ ...timetable, early_out_mins: parseInt(e.target.value) || 0 })}
-                            className="h-8 w-16 rounded bg-slate-950 border border-slate-800 text-amber-400 font-bold px-2"
-                          />
-                          <span className="text-slate-400">Mins (Grace)</span>
-                        </div>
-
-                        <div className="col-span-2 pt-1">
-                          <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-300 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={timetable.use_first_checkin_last_checkout}
-                              onChange={(e) => setTimetable({ ...timetable, use_first_checkin_last_checkout: e.target.checked })}
-                              className="rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
-                            />
-                            <span>Use First Check-In and Last Check-Out Only</span>
-                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setTimetable({ ...timetable, check_out_end_at: '23:59' })}
+                            className="px-2 py-1 rounded bg-violet-600/20 hover:bg-violet-600/40 border border-violet-500/30 text-violet-300 text-[10px] font-sans font-semibold transition"
+                            title="Set Check-Out End At to 23:59 (Allow check-outs all night)"
+                          >
+                            Set 23:59 (No Cutoff)
+                          </button>
                         </div>
                       </div>
+                    ) : (
+                      <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center justify-between">
+                        <span>✅ <strong>Additional Settings OFF:</strong> Check-In and Check-Out time windows are fully open. Employees arriving at 12:00 PM, 1:00 PM, or any time will check in successfully without being blocked.</span>
+                      </div>
                     )}
+
+                    <div className="flex items-center gap-3 col-span-2 flex-wrap">
+                      <label className="w-36 text-slate-400">Calculate As:</label>
+                      <input
+                        type="number"
+                        value={timetable.calculate_as_mins}
+                        onChange={(e) => setTimetable({ ...timetable, calculate_as_mins: parseInt(e.target.value) || 0 })}
+                        className="h-8 w-24 rounded bg-slate-950 border border-slate-800 text-slate-100 font-bold px-2"
+                      />
+                      <span className="text-slate-400">Minutes</span>
+                      <span className="px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-bold text-[11px]">
+                        {formatMinsToHrs(timetable.calculate_as_mins)}
+                      </span>
+
+                      <span className="text-slate-500 ml-3">Late-In:</span>
+                      <input
+                        type="number"
+                        value={timetable.late_in_mins}
+                        onChange={(e) => setTimetable({ ...timetable, late_in_mins: parseInt(e.target.value) || 0 })}
+                        className="h-8 w-16 rounded bg-slate-950 border border-slate-800 text-amber-400 font-bold px-2"
+                      />
+                      <span className="text-slate-400">Mins (Grace)</span>
+
+                      <span className="text-slate-500 ml-3">Early-Out:</span>
+                      <input
+                        type="number"
+                        value={timetable.early_out_mins}
+                        onChange={(e) => setTimetable({ ...timetable, early_out_mins: parseInt(e.target.value) || 0 })}
+                        className="h-8 w-16 rounded bg-slate-950 border border-slate-800 text-amber-400 font-bold px-2"
+                      />
+                      <span className="text-slate-400">Mins (Grace)</span>
+                    </div>
+
+                    <div className="col-span-2 pt-1">
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-300 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={timetable.use_first_checkin_last_checkout}
+                          onChange={(e) => setTimetable({ ...timetable, use_first_checkin_last_checkout: e.target.checked })}
+                          className="rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
+                        />
+                        <span>Use First Check-In and Last Check-Out Only</span>
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Break Management Sub-Section */}
-              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                  <div className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider">
-                    <Coffee className="w-4 h-4" />
-                    <span>Break Management Setup</span>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setEditingBreak({
-                        break_name: 'Lunch Break',
-                        start_time: '12:00',
-                        ahead_to: '12:30',
-                        end_time: '13:00',
-                        delay_to: '13:30',
-                        break_duration_mins: 60,
-                        deduct_type: 'auto_deduct',
-                      });
-                      setIsBreakModalOpen(true);
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold transition"
-                  >
-                    <Sliders className="w-3.5 h-3.5" /> Break Setup Dialog
-                  </button>
+            {/* Break Management Sub-Section */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider">
+                  <Coffee className="w-4 h-4" />
+                  <span>Break Management Setup</span>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs font-mono">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-slate-500 uppercase text-[10px] tracking-wider">
-                        <th className="px-4 py-2 text-left">Break Name</th>
-                        <th className="px-4 py-2 text-left">Start Time</th>
-                        <th className="px-4 py-2 text-left">End Time</th>
-                        <th className="px-4 py-2 text-left">Duration</th>
-                        <th className="px-4 py-2 text-left">Deduct Mode</th>
-                        <th className="px-4 py-2 text-right">Actions</th>
+                <button
+                  onClick={() => {
+                    setEditingBreak({
+                      break_name: 'Lunch Break',
+                      start_time: '12:00',
+                      ahead_to: '12:30',
+                      end_time: '13:00',
+                      delay_to: '13:30',
+                      break_duration_mins: 60,
+                      deduct_type: 'auto_deduct',
+                    });
+                    setIsBreakModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold transition"
+                >
+                  <Sliders className="w-3.5 h-3.5" /> Break Setup Dialog
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs font-mono">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-500 uppercase text-[10px] tracking-wider">
+                      <th className="px-4 py-2 text-left">Break Name</th>
+                      <th className="px-4 py-2 text-left">Start Time</th>
+                      <th className="px-4 py-2 text-left">End Time</th>
+                      <th className="px-4 py-2 text-left">Duration</th>
+                      <th className="px-4 py-2 text-left">Deduct Mode</th>
+                      <th className="px-4 py-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {breaks.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-6 text-center text-slate-600 font-sans">
+                          No break rules configured yet. Click "Break Setup Dialog" above to add one.
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {breaks.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-6 text-center text-slate-600 font-sans">
-                            No break rules configured yet. Click "Break Setup Dialog" above to add one.
+                    ) : (
+                      breaks.map((b, idx) => (
+                        <tr key={idx} className="border-b border-slate-800/40 hover:bg-slate-900/60 transition">
+                          <td className="px-4 py-3 font-bold text-slate-200 font-sans">{b.break_name}</td>
+                          <td className="px-4 py-3 text-amber-400 font-medium">
+                            {formatTo12Hr(b.start_time)} <span className="text-slate-500 text-[11px]">(Ahead: {formatTo12Hr(b.ahead_to)})</span>
+                          </td>
+                          <td className="px-4 py-3 text-amber-400 font-medium">
+                            {formatTo12Hr(b.end_time)} <span className="text-slate-500 text-[11px]">(Delay: {formatTo12Hr(b.delay_to)})</span>
+                          </td>
+                          <td className="px-4 py-3 text-emerald-400 font-bold">{b.break_duration_mins} mins</td>
+                          <td className="px-4 py-3 uppercase text-[10px] text-slate-400">
+                            <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 font-bold">
+                              {b.deduct_type === 'auto_deduct' ? 'Auto Deduct' : 'Based on Punch'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={() => handleDeleteBreak(b.break_name)}
+                              className="p-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </td>
                         </tr>
-                      ) : (
-                        breaks.map((b, idx) => (
-                          <tr key={idx} className="border-b border-slate-800/40 hover:bg-slate-900/60 transition">
-                            <td className="px-4 py-3 font-bold text-slate-200 font-sans">{b.break_name}</td>
-                            <td className="px-4 py-3 text-amber-400 font-medium">
-                              {formatTo12Hr(b.start_time)} <span className="text-slate-500 text-[11px]">(Ahead: {formatTo12Hr(b.ahead_to)})</span>
-                            </td>
-                            <td className="px-4 py-3 text-amber-400 font-medium">
-                              {formatTo12Hr(b.end_time)} <span className="text-slate-500 text-[11px]">(Delay: {formatTo12Hr(b.delay_to)})</span>
-                            </td>
-                            <td className="px-4 py-3 text-emerald-400 font-bold">{b.break_duration_mins} mins</td>
-                            <td className="px-4 py-3 uppercase text-[10px] text-slate-400">
-                              <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 font-bold">
-                                {b.deduct_type === 'auto_deduct' ? 'Auto Deduct' : 'Based on Punch'}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <button
-                                onClick={() => handleDeleteBreak(b.break_name)}
-                                className="p-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
+          </div>
         )}
 
-        {/* ── SUB-TAB 2: SHIFT MANAGEMENT ───────────────────────────────────── */}
-        {activeMenuTab === 'shift' && (
-          <div className="p-6 space-y-4 min-h-[400px]">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-sm font-bold text-white">Active Shift Cycles</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Combine timetables into daily and weekly work shifts.</p>
-              </div>
-              <button
-                onClick={() => toast.success('New shift cycle created!')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
-              >
-                <Plus className="w-3.5 h-3.5" /> Create Shift
-              </button>
+      {/* ── SUB-TAB 2: SHIFT MANAGEMENT ───────────────────────────────────── */}
+      {activeMenuTab === 'shift' && (
+        <div className="p-6 space-y-4 min-h-[400px]">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-white">Active Shift Cycles</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Combine timetables into daily and weekly work shifts.</p>
             </div>
+            <button
+              onClick={() => toast.success('New shift cycle created!')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+            >
+              <Plus className="w-3.5 h-3.5" /> Create Shift
+            </button>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-              {[
-                { name: 'General Morning Shift', time: '09:00 AM - 04:00 PM', days: 'Mon - Fri', status: 'Active' },
-                { name: 'Evening Rotational Shift', time: '02:00 PM - 10:00 PM', days: 'Mon - Sat', status: 'Active' },
-                { name: 'Night Operations Shift', time: '10:00 PM - 06:00 AM', days: 'Mon - Sat', status: 'Inactive' },
-              ].map((s, idx) => (
-                <div key={idx} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-3 shadow-xl">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm text-slate-100">{s.name}</span>
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                      s.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-slate-800 text-slate-500 border-slate-700'
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+            {[
+              { name: 'General Morning Shift', time: '09:00 AM - 04:00 PM', days: 'Mon - Fri', status: 'Active' },
+              { name: 'Evening Rotational Shift', time: '02:00 PM - 10:00 PM', days: 'Mon - Sat', status: 'Active' },
+              { name: 'Night Operations Shift', time: '10:00 PM - 06:00 AM', days: 'Mon - Sat', status: 'Inactive' },
+            ].map((s, idx) => (
+              <div key={idx} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-3 shadow-xl">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sm text-slate-100">{s.name}</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${s.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-slate-800 text-slate-500 border-slate-700'
                     }`}>
-                      {s.status}
-                    </span>
-                  </div>
-                  <div className="text-xs font-mono text-slate-400">{s.time}</div>
-                  <div className="text-xs text-slate-500">Days: {s.days}</div>
+                    {s.status}
+                  </span>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── SUB-TAB 3: EMPLOYEE SCHEDULE ROSTER ───────────────────────────── */}
-        {activeMenuTab === 'schedule' && (
-          <div className="p-6 space-y-4 min-h-[400px]">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-sm font-bold text-white">Employee Roster Schedule</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Assign shifts and timetable rules to employees for each day of the week.</p>
+                <div className="text-xs font-mono text-slate-400">{s.time}</div>
+                <div className="text-xs text-slate-500">Days: {s.days}</div>
               </div>
-              <button
-                onClick={() => toast.success('Roster schedule saved to database!')}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
-              >
-                <Save className="w-4 h-4" /> Save Schedule Roster
-              </button>
-            </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs font-mono">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-500 uppercase text-[10px] tracking-wider">
-                    <th className="px-4 py-3 text-left">Code</th>
-                    <th className="px-4 py-3 text-left">Employee Name</th>
-                    <th className="px-4 py-3 text-left">Assigned Shift</th>
-                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                      <th key={day} className="px-3 py-3 text-center">{day}</th>
+      {/* ── SUB-TAB 3: EMPLOYEE SCHEDULE ROSTER ───────────────────────────── */}
+      {activeMenuTab === 'schedule' && (
+        <div className="p-6 space-y-4 min-h-[400px]">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-white">Employee Roster Schedule</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Assign shifts and timetable rules to employees for each day of the week.</p>
+            </div>
+            <button
+              onClick={() => toast.success('Roster schedule saved to database!')}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+            >
+              <Save className="w-4 h-4" /> Save Schedule Roster
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-mono">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-500 uppercase text-[10px] tracking-wider">
+                  <th className="px-4 py-3 text-left">Code</th>
+                  <th className="px-4 py-3 text-left">Employee Name</th>
+                  <th className="px-4 py-3 text-left">Assigned Shift</th>
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                    <th key={day} className="px-3 py-3 text-center">{day}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {scheduleData.map((row, idx) => (
+                  <tr key={idx} className="border-b border-slate-800/40 hover:bg-slate-900/60 transition">
+                    <td className="px-4 py-3 font-bold text-slate-300">{row.code}</td>
+                    <td className="px-4 py-3 font-bold text-slate-100 font-sans">{row.name}</td>
+                    <td className="px-4 py-3 text-emerald-400">{row.shift}</td>
+                    {[row.mon, row.tue, row.wed, row.thu, row.fri, row.sat, row.sun].map((val, dIdx) => (
+                      <td key={dIdx} className="px-3 py-3 text-center">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${val === 'ON' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-slate-800 text-slate-500 border-slate-700'
+                          }`}>
+                          {val}
+                        </span>
+                      </td>
                     ))}
                   </tr>
-                </thead>
-                <tbody>
-                  {scheduleData.map((row, idx) => (
-                    <tr key={idx} className="border-b border-slate-800/40 hover:bg-slate-900/60 transition">
-                      <td className="px-4 py-3 font-bold text-slate-300">{row.code}</td>
-                      <td className="px-4 py-3 font-bold text-slate-100 font-sans">{row.name}</td>
-                      <td className="px-4 py-3 text-emerald-400">{row.shift}</td>
-                      {[row.mon, row.tue, row.wed, row.thu, row.fri, row.sat, row.sun].map((val, dIdx) => (
-                        <td key={dIdx} className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                            val === 'ON' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-slate-800 text-slate-500 border-slate-700'
-                          }`}>
-                            {val}
-                          </span>
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── SUB-TAB 4: EXCEPTION ASSIGNMENT ───────────────────────────────── */}
+      {activeMenuTab === 'exception' && (
+        <div className="p-6 space-y-4 min-h-[400px]">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-white">Exception & Overtime Assignments</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Configure grace periods, overtime multipliers, and leave exceptions.</p>
             </div>
           </div>
-        )}
 
-        {/* ── SUB-TAB 4: EXCEPTION ASSIGNMENT ───────────────────────────────── */}
-        {activeMenuTab === 'exception' && (
-          <div className="p-6 space-y-4 min-h-[400px]">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-sm font-bold text-white">Exception & Overtime Assignments</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Configure grace periods, overtime multipliers, and leave exceptions.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 text-xs font-mono">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
+              <span className="font-bold text-slate-200 font-sans text-sm">Grace & Late Exemption Rules</span>
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-slate-400">Late Grace Period:</span>
+                <span className="font-bold text-emerald-400">15 Minutes</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Early Exit Grace Period:</span>
+                <span className="font-bold text-emerald-400">10 Minutes</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Max Exemptions / Month:</span>
+                <span className="font-bold text-amber-400">3 Occurrences</span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 text-xs font-mono">
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
-                <span className="font-bold text-slate-200 font-sans text-sm">Grace & Late Exemption Rules</span>
-                <div className="flex items-center justify-between pt-2">
-                  <span className="text-slate-400">Late Grace Period:</span>
-                  <span className="font-bold text-emerald-400">15 Minutes</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Early Exit Grace Period:</span>
-                  <span className="font-bold text-emerald-400">10 Minutes</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Max Exemptions / Month:</span>
-                  <span className="font-bold text-amber-400">3 Occurrences</span>
-                </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
+              <span className="font-bold text-slate-200 font-sans text-sm">Overtime Calculation Multipliers</span>
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-slate-400">Weekday Overtime Rate:</span>
+                <span className="font-bold text-purple-400">1.5x Hourly Wage</span>
               </div>
-
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
-                <span className="font-bold text-slate-200 font-sans text-sm">Overtime Calculation Multipliers</span>
-                <div className="flex items-center justify-between pt-2">
-                  <span className="text-slate-400">Weekday Overtime Rate:</span>
-                  <span className="font-bold text-purple-400">1.5x Hourly Wage</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Weekend Overtime Rate:</span>
-                  <span className="font-bold text-purple-400">2.0x Hourly Wage</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Holiday Overtime Rate:</span>
-                  <span className="font-bold text-purple-400">2.5x Hourly Wage</span>
-                </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Weekend Overtime Rate:</span>
+                <span className="font-bold text-purple-400">2.0x Hourly Wage</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Holiday Overtime Rate:</span>
+                <span className="font-bold text-purple-400">2.5x Hourly Wage</span>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ── SUB-TAB 5: GLOBAL ENGINE RULES ────────────────────────────────── */}
-        {activeMenuTab === 'rule' && (
-          <div className="p-6 space-y-6 min-h-[400px]">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-sm font-bold text-white">Global TCP Engine Safeguards</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Hardware socket thresholds, double-scan lockout, and automated check-out policies.</p>
-              </div>
-              <button
-                onClick={() => toast.success('Global engine safeguards updated!')}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
-              >
-                <Save className="w-4 h-4" /> Save Global Rules
-              </button>
+      {/* ── SUB-TAB 5: GLOBAL ENGINE RULES ────────────────────────────────── */}
+      {activeMenuTab === 'rule' && (
+        <div className="p-6 space-y-6 min-h-[400px]">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-white">Global TCP Engine Safeguards</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Hardware socket thresholds, double-scan lockout, and automated check-out policies.</p>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs font-mono">
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
-                <span className="font-bold text-slate-200 font-sans text-sm">Biometric Double-Scan Lockout</span>
-                <div className="space-y-2">
-                  <label className="text-slate-400">Lockout Window (Seconds):</label>
-                  <input
-                    type="number"
-                    value={doubleScanThresholdSecs}
-                    onChange={(e) => setDoubleScanThresholdSecs(parseInt(e.target.value) || 60)}
-                    className="w-full h-9 rounded-xl bg-slate-950 border border-slate-800 text-emerald-400 font-bold px-3 text-sm"
-                  />
-                  <p className="text-[10px] text-slate-500">Punches received within this window are discarded as duplicate scans.</p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
-                <span className="font-bold text-slate-200 font-sans text-sm">Check-Out Minimum Working Time Gap</span>
-                <div className="space-y-2">
-                  <label className="text-slate-400">Minimum Working Gap (Minutes):</label>
-                  <input
-                    type="number"
-                    value={minCheckoutGapMins}
-                    onChange={(e) => setMinCheckoutGapMins(parseInt(e.target.value) || 5)}
-                    className="w-full h-9 rounded-xl bg-slate-950 border border-slate-800 text-purple-400 font-bold px-3 text-sm"
-                  />
-                  <p className="text-[10px] text-slate-500">Punches occurring before this gap will not trigger Check-Out status.</p>
-                </div>
-              </div>
-            </div>
+            <button
+              onClick={() => toast.success('Global engine safeguards updated!')}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+            >
+              <Save className="w-4 h-4" /> Save Global Rules
+            </button>
           </div>
-        )}
-      </div>
 
-      {/* Break Management Setup Modal (Screenshot 2 exact dialog) */}
-      {isBreakModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-xl rounded-2xl border border-emerald-500/40 bg-slate-950 shadow-2xl overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-emerald-500/30 bg-emerald-600/20 px-6 py-4">
-              <h2 className="text-sm font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-2">
-                <Coffee className="w-4 h-4 text-emerald-400" />
-                <span>Break Management Setup</span>
-              </h2>
-              <button
-                onClick={() => setIsBreakModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Action Bar */}
-            <div className="flex items-center gap-2 border-b border-slate-800 bg-slate-900/60 px-6 py-2">
-              <button
-                onClick={() => {
-                  setEditingBreak({
-                    break_name: 'New Break',
-                    start_time: '12:00',
-                    ahead_to: '12:30',
-                    end_time: '13:00',
-                    delay_to: '13:30',
-                    break_duration_mins: 60,
-                    deduct_type: 'auto_deduct',
-                  });
-                }}
-                className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700"
-              >
-                + Add
-              </button>
-              <button
-                onClick={handleSaveBreak}
-                className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => setBreaks([])}
-                className="px-3 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold"
-              >
-                Delete
-              </button>
-            </div>
-
-            {/* Modal Form Fields */}
-            <div className="p-6 space-y-4 text-xs font-mono">
-              <div className="flex items-center gap-3">
-                <label className="w-32 text-slate-400">Break Name:</label>
-                <input
-                  type="text"
-                  value={editingBreak.break_name}
-                  onChange={(e) => setEditingBreak({ ...editingBreak, break_name: e.target.value })}
-                  className="flex-1 h-9 rounded bg-slate-900 border border-slate-800 text-slate-100 px-3 font-sans font-bold"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <label className="w-28 text-slate-400">Start Time:</label>
-                <input
-                  type="time"
-                  value={editingBreak.start_time}
-                  onChange={(e) => setEditingBreak({ ...editingBreak, start_time: e.target.value })}
-                  className="h-8 rounded bg-slate-900 border border-slate-800 text-slate-200 px-2 font-bold"
-                />
-                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] text-amber-400 font-bold">
-                  {formatTo12Hr(editingBreak.start_time)}
-                </span>
-                <span className="text-slate-500 ml-2">Ahead to:</span>
-                <input
-                  type="time"
-                  value={editingBreak.ahead_to}
-                  onChange={(e) => setEditingBreak({ ...editingBreak, ahead_to: e.target.value })}
-                  className="h-8 rounded bg-slate-900 border border-slate-800 text-slate-200 px-2 font-bold"
-                />
-                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] text-slate-300 font-bold">
-                  {formatTo12Hr(editingBreak.ahead_to)}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <label className="w-28 text-slate-400">End Time:</label>
-                <input
-                  type="time"
-                  value={editingBreak.end_time}
-                  onChange={(e) => setEditingBreak({ ...editingBreak, end_time: e.target.value })}
-                  className="h-8 rounded bg-slate-900 border border-slate-800 text-slate-200 px-2 font-bold"
-                />
-                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] text-amber-400 font-bold">
-                  {formatTo12Hr(editingBreak.end_time)}
-                </span>
-                <span className="text-slate-500 ml-2">Delay to:</span>
-                <input
-                  type="time"
-                  value={editingBreak.delay_to}
-                  onChange={(e) => setEditingBreak({ ...editingBreak, delay_to: e.target.value })}
-                  className="h-8 rounded bg-slate-900 border border-slate-800 text-slate-200 px-2 font-bold"
-                />
-                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] text-slate-300 font-bold">
-                  {formatTo12Hr(editingBreak.delay_to)}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <label className="w-32 text-slate-400">Break Duration:</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs font-mono">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
+              <span className="font-bold text-slate-200 font-sans text-sm">Biometric Double-Scan Lockout</span>
+              <div className="space-y-2">
+                <label className="text-slate-400">Lockout Window (Seconds):</label>
                 <input
                   type="number"
-                  value={editingBreak.break_duration_mins}
-                  onChange={(e) => setEditingBreak({ ...editingBreak, break_duration_mins: parseInt(e.target.value) || 0 })}
-                  className="h-8 w-20 rounded bg-slate-900 border border-slate-800 text-slate-200 px-2 font-bold text-emerald-400"
+                  value={doubleScanThresholdSecs}
+                  onChange={(e) => setDoubleScanThresholdSecs(parseInt(e.target.value) || 60)}
+                  className="w-full h-9 rounded-xl bg-slate-950 border border-slate-800 text-emerald-400 font-bold px-3 text-sm"
                 />
-                <span className="text-slate-400">Minutes</span>
-              </div>
-
-              <div className="rounded-xl bg-slate-900/60 p-4 border border-slate-800 space-y-3">
-                <div className="flex items-center gap-6">
-                  <label className="flex items-center gap-2 cursor-pointer text-slate-200 font-bold">
-                    <input
-                      type="radio"
-                      name="deduct_type"
-                      checked={editingBreak.deduct_type === 'auto_deduct'}
-                      onChange={() => setEditingBreak({ ...editingBreak, deduct_type: 'auto_deduct' })}
-                      className="accent-emerald-500"
-                    />
-                    <span>Auto Deduct</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-slate-200 font-bold">
-                    <input
-                      type="radio"
-                      name="deduct_type"
-                      checked={editingBreak.deduct_type === 'based_on_punch'}
-                      onChange={() => setEditingBreak({ ...editingBreak, deduct_type: 'based_on_punch' })}
-                      className="accent-emerald-500"
-                    />
-                    <span>Based on Punch</span>
-                  </label>
-                </div>
+                <p className="text-[10px] text-slate-500">Punches received within this window are discarded as duplicate scans.</p>
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="flex justify-end gap-3 border-t border-slate-800 bg-slate-900/80 px-6 py-4">
-              <button
-                onClick={() => setIsBreakModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveBreak}
-                className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30"
-              >
-                Save Break Rule
-              </button>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
+              <span className="font-bold text-slate-200 font-sans text-sm">Check-Out Minimum Working Time Gap</span>
+              <div className="space-y-2">
+                <label className="text-slate-400">Minimum Working Gap (Minutes):</label>
+                <input
+                  type="number"
+                  value={minCheckoutGapMins}
+                  onChange={(e) => setMinCheckoutGapMins(parseInt(e.target.value) || 5)}
+                  className="w-full h-9 rounded-xl bg-slate-950 border border-slate-800 text-purple-400 font-bold px-3 text-sm"
+                />
+                <p className="text-[10px] text-slate-500">Punches occurring before this gap will not trigger Check-Out status.</p>
+              </div>
             </div>
           </div>
         </div>
       )}
     </div>
+
+      {/* Break Management Setup Modal (Screenshot 2 exact dialog) */ }
+  {
+    isBreakModalOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="w-full max-w-xl rounded-2xl border border-emerald-500/40 bg-slate-950 shadow-2xl overflow-hidden">
+          {/* Modal Header */}
+          <div className="flex items-center justify-between border-b border-emerald-500/30 bg-emerald-600/20 px-6 py-4">
+            <h2 className="text-sm font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-2">
+              <Coffee className="w-4 h-4 text-emerald-400" />
+              <span>Break Management Setup</span>
+            </h2>
+            <button
+              onClick={() => setIsBreakModalOpen(false)}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Modal Action Bar */}
+          <div className="flex items-center gap-2 border-b border-slate-800 bg-slate-900/60 px-6 py-2">
+            <button
+              onClick={() => {
+                setEditingBreak({
+                  break_name: 'New Break',
+                  start_time: '12:00',
+                  ahead_to: '12:30',
+                  end_time: '13:00',
+                  delay_to: '13:30',
+                  break_duration_mins: 60,
+                  deduct_type: 'auto_deduct',
+                });
+              }}
+              className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700"
+            >
+              + Add
+            </button>
+            <button
+              onClick={handleSaveBreak}
+              className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => setBreaks([])}
+              className="px-3 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold"
+            >
+              Delete
+            </button>
+          </div>
+
+          {/* Modal Form Fields */}
+          <div className="p-6 space-y-4 text-xs font-mono">
+            <div className="flex items-center gap-3">
+              <label className="w-32 text-slate-400">Break Name:</label>
+              <input
+                type="text"
+                value={editingBreak.break_name}
+                onChange={(e) => setEditingBreak({ ...editingBreak, break_name: e.target.value })}
+                className="flex-1 h-9 rounded bg-slate-900 border border-slate-800 text-slate-100 px-3 font-sans font-bold"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="w-28 text-slate-400">Start Time:</label>
+              <input
+                type="time"
+                value={editingBreak.start_time}
+                onChange={(e) => setEditingBreak({ ...editingBreak, start_time: e.target.value })}
+                className="h-8 rounded bg-slate-900 border border-slate-800 text-slate-200 px-2 font-bold"
+              />
+              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] text-amber-400 font-bold">
+                {formatTo12Hr(editingBreak.start_time)}
+              </span>
+              <span className="text-slate-500 ml-2">Ahead to:</span>
+              <input
+                type="time"
+                value={editingBreak.ahead_to}
+                onChange={(e) => setEditingBreak({ ...editingBreak, ahead_to: e.target.value })}
+                className="h-8 rounded bg-slate-900 border border-slate-800 text-slate-200 px-2 font-bold"
+              />
+              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] text-slate-300 font-bold">
+                {formatTo12Hr(editingBreak.ahead_to)}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="w-28 text-slate-400">End Time:</label>
+              <input
+                type="time"
+                value={editingBreak.end_time}
+                onChange={(e) => setEditingBreak({ ...editingBreak, end_time: e.target.value })}
+                className="h-8 rounded bg-slate-900 border border-slate-800 text-slate-200 px-2 font-bold"
+              />
+              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] text-amber-400 font-bold">
+                {formatTo12Hr(editingBreak.end_time)}
+              </span>
+              <span className="text-slate-500 ml-2">Delay to:</span>
+              <input
+                type="time"
+                value={editingBreak.delay_to}
+                onChange={(e) => setEditingBreak({ ...editingBreak, delay_to: e.target.value })}
+                className="h-8 rounded bg-slate-900 border border-slate-800 text-slate-200 px-2 font-bold"
+              />
+              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] text-slate-300 font-bold">
+                {formatTo12Hr(editingBreak.delay_to)}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <label className="w-32 text-slate-400">Break Duration:</label>
+              <input
+                type="number"
+                value={editingBreak.break_duration_mins}
+                onChange={(e) => setEditingBreak({ ...editingBreak, break_duration_mins: parseInt(e.target.value) || 0 })}
+                className="h-8 w-20 rounded bg-slate-900 border border-slate-800 text-slate-200 px-2 font-bold text-emerald-400"
+              />
+              <span className="text-slate-400">Minutes</span>
+            </div>
+
+            <div className="rounded-xl bg-slate-900/60 p-4 border border-slate-800 space-y-3">
+              <div className="flex items-center gap-6">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-200 font-bold">
+                  <input
+                    type="radio"
+                    name="deduct_type"
+                    checked={editingBreak.deduct_type === 'auto_deduct'}
+                    onChange={() => setEditingBreak({ ...editingBreak, deduct_type: 'auto_deduct' })}
+                    className="accent-emerald-500"
+                  />
+                  <span>Auto Deduct</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer text-slate-200 font-bold">
+                  <input
+                    type="radio"
+                    name="deduct_type"
+                    checked={editingBreak.deduct_type === 'based_on_punch'}
+                    onChange={() => setEditingBreak({ ...editingBreak, deduct_type: 'based_on_punch' })}
+                    className="accent-emerald-500"
+                  />
+                  <span>Based on Punch</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="flex justify-end gap-3 border-t border-slate-800 bg-slate-900/80 px-6 py-4">
+            <button
+              onClick={() => setIsBreakModalOpen(false)}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveBreak}
+              className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30"
+            >
+              Save Break Rule
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+    </div >
   );
 }

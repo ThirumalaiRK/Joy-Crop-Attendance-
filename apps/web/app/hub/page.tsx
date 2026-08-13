@@ -8,6 +8,7 @@ import {
   Sparkles, BarChart3, Globe, Lock,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { getISTDateStr } from '../../lib/timezone';
 import { clsx } from 'clsx';
 
 interface PortalCard {
@@ -59,7 +60,7 @@ export default function PortalHub() {
 
   const loadStats = async () => {
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getISTDateStr();
       const [empRes, presentRes, onBreakRes, wfRes, ticketRes] = await Promise.all([
         supabase.from('employees').select('count', { count: 'exact', head: true }),
         supabase.from('attendance_records').select('count', { count: 'exact', head: true }).or(`date.eq.${today},created_at.gte.${today}T00:00:00Z`),

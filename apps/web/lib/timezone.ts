@@ -10,6 +10,23 @@ export function nowIST(): DateTime {
 }
 
 /**
+ * Returns current business date string in IST ("YYYY-MM-DD")
+ * Single source of truth for "today's date" across the web app.
+ * Replaces new Date().toISOString().slice(0, 10) which returns UTC date!
+ */
+export function getISTDateStr(dateInput?: string | Date): string {
+  if (!dateInput) {
+    return DateTime.now().setZone(APP_TIMEZONE).toFormat('yyyy-MM-dd');
+  }
+  if (dateInput instanceof Date) {
+    return DateTime.fromJSDate(dateInput, { zone: 'utc' }).setZone(APP_TIMEZONE).toFormat('yyyy-MM-dd');
+  }
+  const dt = DateTime.fromISO(dateInput, { zone: APP_TIMEZONE });
+  if (dt.isValid) return dt.toFormat('yyyy-MM-dd');
+  return DateTime.now().setZone(APP_TIMEZONE).toFormat('yyyy-MM-dd');
+}
+
+/**
  * Converts a UTC Date object, string, or timestamp to Luxon DateTime in Asia/Kolkata (IST)
  */
 export function utcToIST(value: string | Date | number): DateTime {
@@ -20,12 +37,10 @@ export function utcToIST(value: string | Date | number): DateTime {
     return DateTime.fromMillis(value, { zone: 'utc' }).setZone(APP_TIMEZONE);
   }
   if (typeof value === 'string') {
-    // If string already has offset or ISO Z
     const dt = DateTime.fromISO(value, { zone: 'utc' });
     if (dt.isValid) {
       return dt.setZone(APP_TIMEZONE);
     }
-    // Fallback: JS Date parse
     return DateTime.fromJSDate(new Date(value), { zone: 'utc' }).setZone(APP_TIMEZONE);
   }
   return DateTime.now().setZone(APP_TIMEZONE);
@@ -45,9 +60,6 @@ export function istToUTC(value: string): string {
 /**
  * Parses raw un-timezoned biometric hardware device time (e.g. "2026-08-10 09:20:30" or ISO string)
  * explicitly as Asia/Kolkata local time and converts to canonical UTC ISO string.
- *
- * Example:
- *   "2026-08-10 09:20:30" IST -> "2026-08-10T03:50:30.000Z" UTC
  */
 export function parseDeviceTimeToUTC(deviceTimeStr: string | Date): string {
   if (deviceTimeStr instanceof Date) {
@@ -56,21 +68,17 @@ export function parseDeviceTimeToUTC(deviceTimeStr: string | Date): string {
 
   const str = String(deviceTimeStr).trim();
 
-  // Try standard hardware format: YYYY-MM-DD HH:mm:ss
   let dt = DateTime.fromFormat(str, 'yyyy-MM-dd HH:mm:ss', { zone: APP_TIMEZONE });
 
   if (!dt.isValid) {
-    // Try YYYY-MM-DDTHH:mm:ss
     dt = DateTime.fromFormat(str, "yyyy-MM-dd'T'HH:mm:ss", { zone: APP_TIMEZONE });
   }
 
   if (!dt.isValid) {
-    // Try ISO string
     dt = DateTime.fromISO(str, { zone: APP_TIMEZONE });
   }
 
   if (!dt.isValid) {
-    // Fallback to JS Date
     return new Date(str).toISOString();
   }
 
@@ -78,13 +86,32 @@ export function parseDeviceTimeToUTC(deviceTimeStr: string | Date): string {
 }
 
 /**
+ * Formats a raw machine timestamp string (e.g. "2026-08-13 09:20:59")
+ * explicitly parsed in Asia/Kolkata timezone.
+ * Returns: "13 Aug 2026 · 09:20:59 AM IST" or "09:20:59 AM"
+ */
+export function formatMachineTimeIST(machineTimestampStr: string, timeOnly: boolean = false): string {
+  if (!machineTimestampStr) return '—';
+  const str = String(machineTimestampStr).trim();
+
+  let dt = DateTime.fromFormat(str, 'yyyy-MM-dd HH:mm:ss', { zone: APP_TIMEZONE });
+  if (!dt.isValid) {
+    dt = DateTime.fromFormat(str, "yyyy-MM-dd'T'HH:mm:ss", { zone: APP_TIMEZONE });
+  }
+  if (!dt.isValid) {
+    dt = DateTime.fromISO(str, { zone: APP_TIMEZONE });
+  }
+
+  if (dt.isValid) {
+    return timeOnly
+      ? dt.toFormat('hh:mm:ss a')
+      : `${dt.toFormat('dd MMM yyyy · hh:mm:ss a')} IST`;
+  }
+  return str;
+}
+
+/**
  * Calculates start and end of business day in IST and returns both IST & UTC bounds.
- *
- * CRITICAL ARCHITECTURAL GUARANTEE:
- *   IST Start of Day:  2026-08-10 00:00:00.000+05:30
- *   UTC Query Equivalent: 2026-08-09T18:30:00.000Z (Previous calendar date UTC)
- *
- * This ensures biometric logs between 12:00 AM and 05:30 AM IST are NEVER missed!
  */
 export function getAttendanceDayRange(dateISTStr?: string) {
   let baseIST: DateTime;
