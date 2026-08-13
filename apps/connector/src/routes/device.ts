@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { deviceManager } from '../DeviceManager';
 import { supabase } from '../supabase';
+import { eventQueue } from '../queue/EventQueue';
 
 const router = Router();
 
@@ -314,24 +315,36 @@ router.post('/simulate-punch', (req, res) => {
     return res.status(400).json({ error: 'UserID is required' });
   }
   
+  const targetIp = ip || '192.168.1.56';
+
   if (userId === "0" || userId.toLowerCase() === "unknown") {
-    // Simulate unknown finger
-    deviceManager.emit('unknown_fingerprint', { ip: ip || '192.168.1.56', verifyMode, attemptTime: new Date().toISOString() });
+    deviceManager.emit('unknown_fingerprint', { ip: targetIp, verifyMode, attemptTime: new Date().toISOString() });
     console.log(`[Device API] Simulated UNKNOWN punch`);
     return res.json({ status: 'success', message: 'Simulated unknown finger' });
   }
 
-  // Simulate a payload that `node-zklib` getRealTimeLogs would emit
+  const nowIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) + ' ' + new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata' });
+
   const data = {
-    userId: userId,
-    verifyMode: verifyMode || 1, // 1 = Fingerprint, 4 = RFID, 15 = Face
-    attTime: new Date().toISOString()
+    userId: String(userId),
+    verifyMode: verifyMode || 1,
+    attTime: new Date().toISOString(),
   };
   
-  deviceManager.emit('attendance_received', { ip: ip || '192.168.1.56', ...data });
+  deviceManager.emit('attendance_received', { ip: targetIp, ...data });
+
+  eventQueue.push({
+    device_ip: targetIp,
+    device_user_id: String(userId),
+    machine_timestamp: nowIST,
+    received_at_utc: new Date().toISOString(),
+    verification_type: 'FINGERPRINT',
+    device_name: `Identix Terminal (${targetIp})`,
+    raw_payload: JSON.stringify(data),
+  });
   
-  console.log(`[Device API] Simulated punch for user ${userId}`);
-  res.json({ status: 'success', message: 'Simulated punch emitted to WebSockets', data });
+  console.log(`[Device API] Simulated punch for user ${userId} at ${nowIST}`);
+  res.json({ status: 'success', message: 'Simulated punch emitted to WebSockets and EventQueue', data, machine_timestamp: nowIST });
 });
 
 router.post('/sync', async (req, res) => {

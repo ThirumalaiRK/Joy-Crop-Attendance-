@@ -4,8 +4,85 @@ import { employeeCache } from '../cache/EmployeeCache';
 import { deviceCache } from '../cache/DeviceCache';
 import { deviceManager } from '../DeviceManager';
 import { AttendanceProcessor } from '../sync/AttendanceProcessor';
+import { UsbLogImporter } from '../sync/UsbLogImporter';
 
 const router = Router();
+
+// POST /attendance/import-usb-log - Import ZKTeco USB dat export logs directly into Supabase
+router.post('/import-usb-log', async (req, res) => {
+  const { filePath, content, deviceIp } = req.body;
+
+  try {
+    if (content) {
+      const records = UsbLogImporter.parseUsbLogContent(String(content));
+      let ingestedCount = 0;
+      const affectedEmpSet = new Set<string>();
+      const affectedDateSet = new Set<string>();
+
+      for (const rec of records) {
+        const result = await AttendanceProcessor.processPunch({
+          device_ip: deviceIp || '192.168.1.56',
+          device_user_id: rec.device_user_id,
+          machine_timestamp: rec.machine_timestamp,
+          verification_type: rec.verification_type,
+          device_name: 'Identix Terminal (USB Import)',
+          raw_payload: JSON.stringify({ source: 'USB_DIRECT_IMPORT', line: rec.raw_line }),
+        });
+
+        if (result && result.status !== 'REJECTED') {
+          ingestedCount++;
+          if (rec.device_user_id) affectedEmpSet.add(rec.device_user_id);
+          const datePart = rec.machine_timestamp.split(' ')[0];
+          if (datePart) affectedDateSet.add(datePart);
+        }
+      }
+
+      const affectedDates = Array.from(affectedDateSet);
+      for (const dateStr of affectedDates) {
+        const { data: rawRows } = await supabase
+          .from('biometric_raw_punches')
+          .select('employee_id, device_user_id')
+          .gte('event_time_utc', `${dateStr}T00:00:00.000Z`)
+          .lte('event_time_utc', `${dateStr}T23:59:59.999Z`);
+
+        const empIds = [...new Set((rawRows || []).map((r: any) => r.employee_id || r.device_user_id).filter(Boolean))];
+
+        for (const empId of empIds) {
+          const { data: emp } = await supabase
+            .from('employees')
+            .select('id, employee_code, name, department')
+            .or(`id.eq.${empId},employee_code.eq.${empId},device_user_id.eq.${empId}`)
+            .maybeSingle();
+
+          const empCode = emp ? (emp.employee_code || emp.id) : empId;
+          const empUuid = emp ? emp.id : empId;
+          const empName = emp ? emp.name : `Employee ${empId}`;
+          const dept = emp ? (emp.department || 'Engineering') : 'Engineering';
+
+          await AttendanceProcessor.recalculateDailySummaryFromRawPunches(
+            'COMP-001', empUuid, empCode, empName, dept, dateStr
+          );
+        }
+      }
+
+      return res.json({
+        success: true,
+        message: `Successfully parsed and ingested ${ingestedCount} USB biometric punches across ${affectedDates.length} attendance dates.`,
+        recordsParsed: records.length,
+        recordsIngested: ingestedCount,
+        affectedEmployees: affectedEmpSet.size,
+        affectedDates,
+      });
+    }
+
+    const targetPath = filePath || 'f:\\TEST LIVE ATTENDANCE\\device dat from usb\\CGKK223862906_attlog.dat';
+    const result = await UsbLogImporter.ingestUsbFile(targetPath, deviceIp || '192.168.1.56');
+    res.json(result);
+  } catch (err: any) {
+    console.error('❌ [USB Import Error]:', err);
+    res.status(500).json({ success: false, error: err?.message });
+  }
+});
 
 // GET /attendance - Return recent attendance sessions
 router.get('/', async (req, res) => {

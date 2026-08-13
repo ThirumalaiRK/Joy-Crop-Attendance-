@@ -16,6 +16,7 @@ import { employeeCache } from './cache/EmployeeCache';
 import { deviceCache } from './cache/DeviceCache';
 import { eventQueue } from './queue/EventQueue';
 import { backlogDrainWorker } from './queue/BacklogDrainWorker';
+import { UsbLogImporter } from './sync/UsbLogImporter';
 
 dotenv.config();
 
@@ -77,7 +78,12 @@ initializeDatabase()
     startSyncEngine();
     commandProcessor.start();
 
-    // 4. Auto-connect persistent TCP sockets to registered hardware terminals
+    // 4. Auto-ingest USB device dump files if present in workspace
+    setTimeout(async () => {
+      await UsbLogImporter.autoScanAndIngest();
+    }, 500);
+
+    // 5. Auto-connect persistent TCP sockets to registered hardware terminals
     setTimeout(() => {
       deviceManager.autoConnectFromSupabase();
     }, 1500);

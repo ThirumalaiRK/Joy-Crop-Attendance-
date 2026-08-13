@@ -197,6 +197,14 @@ export function subscribeAttendanceEvents(callback: AttendanceCallback) {
     const channelId = `realtime-att-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
       .channel(channelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'biometric_raw_punches' }, async () => {
+        await syncSupabaseEvents();
+        callback();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_daily_summary' }, async () => {
+        await syncSupabaseEvents();
+        callback();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_events' }, async () => {
         await syncSupabaseEvents();
         callback();

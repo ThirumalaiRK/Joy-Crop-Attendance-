@@ -4,6 +4,7 @@ import { AppDataSource, DeviceCache as SQLiteDeviceCache } from './db';
 import { supabase } from './supabase';
 import { deviceCache } from './cache/DeviceCache';
 import { eventQueue } from './queue/EventQueue';
+import { AttendanceProcessor } from './sync/AttendanceProcessor';
 import { DateTime } from 'luxon';
 
 const APP_TIMEZONE = 'Asia/Kolkata';
@@ -224,6 +225,11 @@ export class DeviceManager extends EventEmitter {
         if (synced) console.log(`⏱️ [DeviceManager] Synchronized ${ip} hardware clock to IST.`);
       }).catch(() => {});
 
+      // Immediate TCP network log sync to ingest stored terminal attendance records
+      this.syncDeviceLogsOverNetwork(ip).catch((err) => {
+        console.warn(`⚠️ [DeviceManager] Initial network log sync notice for ${ip}:`, err?.message);
+      });
+
       this.startHeartbeat(ip, port);
       return true;
     } else {
@@ -368,17 +374,25 @@ export class DeviceManager extends EventEmitter {
     try {
       const { data: deviceRows } = await supabase.from('devices').select('ip_address, port');
       if (!deviceRows || deviceRows.length === 0) {
-        console.log('[DeviceManager] No devices registered in Supabase to auto-connect.');
+        console.log('[DeviceManager] No devices registered in Supabase. Attempting fallback auto-connect to primary terminal 192.168.1.56:4370...');
+        await this.connectToDevice('192.168.1.56', 4370);
         return;
       }
+      let connectedAny = false;
       for (const row of deviceRows) {
         if (row.ip_address) {
           console.log(`[DeviceManager] Auto-connecting to ${row.ip_address}:${row.port || 4370}...`);
-          await this.connectToDevice(row.ip_address, row.port || 4370);
+          const ok = await this.connectToDevice(row.ip_address, row.port || 4370);
+          if (ok) connectedAny = true;
         }
+      }
+      if (!connectedAny && !this.devices.has('192.168.1.56')) {
+        console.log('[DeviceManager] Primary device 192.168.1.56 not connected from DB list. Attempting direct auto-connect...');
+        await this.connectToDevice('192.168.1.56', 4370);
       }
     } catch (err: any) {
       console.error('[DeviceManager] autoConnectFromSupabase error:', err?.message);
+      await this.connectToDevice('192.168.1.56', 4370).catch(() => {});
     } finally {
       this.isAutoConnecting = false;
     }
@@ -392,6 +406,60 @@ export class DeviceManager extends EventEmitter {
     const device = this.devices.get(ip);
     if (!device) return [];
     return await device.getAttendanceLogs();
+  }
+
+  async syncDeviceLogsOverNetwork(ip: string): Promise<{ fetched: number; ingested: number }> {
+    const device = this.devices.get(ip);
+    if (!device) return { fetched: 0, ingested: 0 };
+
+    console.log(`📡 [DeviceManager] Pulling attendance logs over TCP network from ${ip}:4370...`);
+    let logs: any[] = [];
+    try {
+      logs = await device.getAttendanceLogs();
+    } catch (err: any) {
+      console.warn(`⚠️ [DeviceManager] getAttendanceLogs network error for ${ip}:`, err?.message);
+      return { fetched: 0, ingested: 0 };
+    }
+
+    console.log(`📡 [DeviceManager] Retrieved ${logs.length} attendance log records over TCP network from ${ip}. Ingesting...`);
+
+    let ingestedCount = 0;
+    const affectedDates = new Set<string>();
+
+    for (const log of logs) {
+      const rawUserIdStr = String(log.deviceUserId || log.userSn || '').trim();
+      const rawTs = log.recordTime || log.timestamp;
+      if (!rawUserIdStr || !rawTs) continue;
+
+      let machineTsStr: string;
+      if (typeof rawTs === 'string' && /^\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}/.test(rawTs)) {
+        machineTsStr = rawTs.replace('T', ' ').slice(0, 19);
+      } else {
+        const dt = new Date(rawTs);
+        if (isNaN(dt.getTime())) continue;
+        const datePart = dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        const timePart = dt.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata' });
+        machineTsStr = `${datePart} ${timePart}`;
+      }
+
+      const result = await AttendanceProcessor.processPunch({
+        device_ip: ip,
+        device_user_id: rawUserIdStr,
+        machine_timestamp: machineTsStr,
+        verification_type: log.verificationType || 'FINGERPRINT',
+        device_name: deviceCache.get(ip)?.name || `Identix Terminal (${ip})`,
+        raw_payload: JSON.stringify({ source: 'TCP_NETWORK_SYNC', userSn: log.userSn, recordTime: rawTs }),
+      });
+
+      if (result && result.status !== 'REJECTED') {
+        ingestedCount++;
+        const datePart = machineTsStr.split(' ')[0];
+        if (datePart) affectedDates.add(datePart);
+      }
+    }
+
+    console.log(`✅ [DeviceManager] Successfully network-synced ${ingestedCount}/${logs.length} records from ${ip} over TCP.`);
+    return { fetched: logs.length, ingested: ingestedCount };
   }
 
   async clearAttendanceLogs(ip: string): Promise<boolean> {
@@ -428,6 +496,16 @@ export class DeviceManager extends EventEmitter {
         memory_usage: info?.memoryUsage || deviceCache.get(ip)?.memoryUsage,
         last_ping: new Date().toISOString(),
       }, { onConflict: 'device_ip' });
+
+      await supabase.from('devices').upsert({
+        ip_address: ip,
+        port: port || 4370,
+        name: info?.deviceName || deviceCache.get(ip)?.name || `Identix K90 Pro (${ip})`,
+        model: info?.platform || 'Identix K90 Pro',
+        firmware_version: info?.firmware || deviceCache.get(ip)?.firmware || 'Linux 10.0',
+        status: status,
+        last_sync: new Date().toISOString(),
+      }, { onConflict: 'ip_address' });
     } catch (_) {}
   }
 

@@ -115,7 +115,7 @@ export const startSyncEngine = () => {
         let sinceMs = lastProcessedTime.get(dev.ip);
         if (!sinceMs) {
           const dbCursor = await loadPersistedSyncState(dev.ip);
-          sinceMs = dbCursor ?? defaultStartMs;
+          sinceMs = dbCursor ?? 0;
           lastProcessedTime.set(dev.ip, sinceMs);
         }
 

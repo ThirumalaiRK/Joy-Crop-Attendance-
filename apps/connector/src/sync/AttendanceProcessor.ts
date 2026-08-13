@@ -136,11 +136,23 @@ export class AttendanceProcessor {
     };
 
     try {
-      const { data: insertedRaw, error: rawInsertErr } = await supabase
+      let { data: insertedRaw, error: rawInsertErr } = await supabase
         .from('biometric_raw_punches')
         .insert([rawPunchData])
         .select('id')
         .single();
+
+      if (rawInsertErr && rawInsertErr.message?.includes('event_type_check')) {
+        // Fallback for schemas with strict ('IN','OUT','UNKNOWN') check constraint
+        rawPunchData.event_type = 'UNKNOWN';
+        const retryRes = await supabase
+          .from('biometric_raw_punches')
+          .insert([rawPunchData])
+          .select('id')
+          .single();
+        insertedRaw = retryRes.data;
+        rawInsertErr = retryRes.error;
+      }
 
       if (rawInsertErr) {
         if (rawInsertErr.code === '23505' || rawInsertErr.message?.includes('duplicate')) {
@@ -150,6 +162,7 @@ export class AttendanceProcessor {
         console.warn('⚠️ [AttendanceProcessor] biometric_raw_punches insert warning:', rawInsertErr.message);
       } else if (insertedRaw) {
         rawPunchRecordId = insertedRaw.id;
+        console.log(`✅ [AttendanceProcessor] Inserted biometric raw punch ID: ${rawPunchRecordId}`);
       }
     } catch (err: any) {
       console.warn('⚠️ [AttendanceProcessor] biometric_raw_punches exception:', err?.message);
@@ -530,13 +543,22 @@ export class AttendanceProcessor {
   ): Promise<any> {
     const dayRange = getAttendanceDayRange(dateStrIST);
 
+    const numId = parseInt(empCode.replace(/\D/g, ''), 10);
+    const userMatches = [empUuid, empCode];
+    if (!isNaN(numId)) {
+      userMatches.push(String(numId));
+      userMatches.push(`EMP-${numId}`);
+      userMatches.push(`EMP-${String(numId).padStart(2, '0')}`);
+    }
+    const orCondition = userMatches.map(u => `employee_id.eq.${u},device_user_id.eq.${u}`).join(',');
+
     // Fetch all raw punches for this employee within the IST business day range (startUTC -> endUTC)
     // Primary sort: event_time_utc ASC. Secondary sort: machine_log_id ASC
     const { data: rawPunches, error } = await supabase
       .from('biometric_raw_punches')
       .select('*')
       .eq('company_id', companyId)
-      .or(`employee_id.eq.${empUuid},employee_id.eq.${empCode}`)
+      .or(orCondition)
       .gte('event_time_utc', dayRange.startUTC)
       .lte('event_time_utc', dayRange.endUTC)
       .order('event_time_utc', { ascending: true })

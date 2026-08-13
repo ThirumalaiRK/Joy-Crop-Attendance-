@@ -634,6 +634,25 @@ export function DeviceCenterPanel() {
               <WifiOff className="size-3 text-rose-400" /><span className="text-xs text-rose-400">{offline} Offline</span>
             </div>
           )}
+          <Button variant="outline" size="sm" onClick={async () => {
+            const tid = toast.loading('Importing biometric punches from USB log file...');
+            try {
+              const res = await fetch(`${getConnectorBase()}/attendance/import-usb-log`, { method: 'POST' });
+              const data = await res.json();
+              if (data.success) {
+                toast.success(`✅ ${data.message}`, { id: tid });
+                loadDevices();
+                fetchConnectorStatus();
+                fetchConnectionLogs();
+              } else {
+                toast.error(`❌ ${data.error || 'USB Log import failed'}`, { id: tid });
+              }
+            } catch (err: any) {
+              toast.error(`❌ Import failed: ${err.message}`, { id: tid });
+            }
+          }} className="border-indigo-500/40 bg-indigo-600/10 text-indigo-300 hover:bg-indigo-600 hover:text-white">
+            <Download className="size-4 mr-1" /> Import USB Logs (.dat)
+          </Button>
           <Button variant="outline" size="sm" onClick={() => { loadDevices(); fetchConnectorStatus(); fetchConnectionLogs(); }} className="border-slate-700 text-slate-300">
             <RefreshCw className="size-4 mr-1" /> Refresh
           </Button>

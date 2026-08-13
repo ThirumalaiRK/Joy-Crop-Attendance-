@@ -192,6 +192,14 @@ export function AttendanceCommandCenter() {
 
     const ch = supabase
       .channel('admin-attendance-cc-v2')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'biometric_raw_punches' }, () => {
+        loadLegacyRecords();
+        loadTimeEngineSummaries();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_daily_summary' }, () => {
+        loadLegacyRecords();
+        loadTimeEngineSummaries();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, () => {
         loadLegacyRecords();
       })
