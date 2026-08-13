@@ -16,6 +16,15 @@ export interface AttendanceLog {
 
 export type ConnectionState = 'ONLINE' | 'CONNECTING' | 'SYNCING' | 'OFFLINE' | 'ERROR' | 'RECONNECTING';
 
+export interface DeviceCapabilities {
+  live_fingerprint_image: boolean;
+  fingerprint_template: boolean;
+  verification_event: boolean;
+  face_recognition: boolean;
+  protocol: string;
+  image_unavailability_reason: string;
+}
+
 export interface DeviceInfo {
   ip: string;
   port: number;
@@ -29,6 +38,10 @@ export interface DeviceInfo {
   memoryUsage?: string;
   latency_ms?: number;
   connectionState?: ConnectionState;
+  deviceTime?: string;
+  serverTime?: string;
+  clockDriftSeconds?: number;
+  capabilities?: DeviceCapabilities;
 }
 
 export interface IBiometricDevice {
@@ -46,7 +59,9 @@ export interface IBiometricDevice {
   syncTime(): Promise<boolean>;
   getUserTemplates(uid: number): Promise<any[]>;
   getDeviceInfo(): Promise<DeviceInfo>;
+  getCapabilities(): DeviceCapabilities;
   ping?(): Promise<number>;
 }
+
 
 

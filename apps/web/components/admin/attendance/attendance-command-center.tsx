@@ -105,7 +105,6 @@ export function AttendanceCommandCenter() {
           method: r.verification_type || 'Fingerprint',
           device_name: `Identix Terminal (${r.device_ip})`,
           status: 'RAW PUNCH',
-          confidence_score: 99.8,
         };
       });
 

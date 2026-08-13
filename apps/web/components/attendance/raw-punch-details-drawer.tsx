@@ -120,8 +120,14 @@ export function RawPunchDetailsDrawer({
               </div>
               <div>
                 <p className="text-[10px] text-slate-500">Verification Method</p>
-                <p className="text-xs font-medium text-slate-200 capitalize mt-1">
-                  {punch.verification_type || 'FINGERPRINT'}
+                <p className="text-xs font-semibold text-emerald-400 mt-1">
+                  Fingerprint Verified
+                </p>
+              </div>
+              <div className="col-span-2 pt-2 border-t border-slate-800/60">
+                <p className="text-[10px] text-slate-500">Fingerprint Image Capability</p>
+                <p className="text-[11px] text-amber-400 font-mono mt-0.5">
+                  Fingerprint image not available from device protocol (Verification & Template supported)
                 </p>
               </div>
             </div>

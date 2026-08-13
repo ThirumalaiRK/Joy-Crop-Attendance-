@@ -54,6 +54,54 @@ export class DeviceManager extends EventEmitter {
     super();
   }
 
+  private agentId = `AGENT-${require('os').hostname()}-${process.pid}`;
+
+  private async acquireLease(ip: string): Promise<boolean> {
+    try {
+      const now = new Date();
+      const leaseExpires = new Date(now.getTime() + 60_000).toISOString();
+      const { data: existing } = await supabase
+        .from('device_connector_leases')
+        .select('*')
+        .eq('device_ip', ip)
+        .maybeSingle();
+
+      if (existing && existing.agent_id !== this.agentId) {
+        const expiresAt = new Date(existing.lease_expires_at).getTime();
+        if (expiresAt > now.getTime()) {
+          console.warn(`⚠️ [DeviceManager] Connection to ${ip} owned by active agent ${existing.agent_id}. Skipping duplicate connection.`);
+          return false;
+        }
+      }
+
+      await supabase.from('device_connector_leases').upsert({
+        device_ip: ip,
+        agent_id: this.agentId,
+        lease_expires_at: leaseExpires,
+        heartbeat_at: now.toISOString(),
+      }, { onConflict: 'device_ip' });
+
+      return true;
+    } catch (err: any) {
+      console.warn(`⚠️ [DeviceManager] Lease check warning for ${ip}: ${err?.message}`);
+      return true; // proceed fallback if table not ready
+    }
+  }
+
+  private async logConnectionEvent(ip: string, eventType: string, severity: 'INFO'|'SUCCESS'|'WARNING'|'ERROR'|'CRITICAL', message: string, metadata?: any) {
+    try {
+      await supabase.from('device_connection_logs').insert([{
+        company_id: 'COMP-001',
+        device_ip: ip,
+        event_type: eventType,
+        severity,
+        message,
+        metadata,
+        occurred_at_utc: new Date().toISOString(),
+      }]);
+    } catch (_) {}
+  }
+
   /**
    * Primary entry point: Connect to device over persistent TCP socket
    */
@@ -65,11 +113,15 @@ export class DeviceManager extends EventEmitter {
       }
     }
 
+    const leaseOk = await this.acquireLease(ip);
+    if (!leaseOk) return false;
+
     this.stopReconnectTimer(ip);
 
     const device = new ZKTecoDevice(ip, port);
     deviceCache.updateStatus(ip, 'CONNECTING');
     this.emit('device:connecting', { ip, port });
+    this.logConnectionEvent(ip, 'DEVICE_CONNECTING', 'INFO', `Initiating TCP socket connection to ${ip}:${port}...`);
 
     console.log(`🔌 [DeviceManager] Initiating persistent TCP socket to ${ip}:${port}...`);
     const isConnected = await device.connect();
@@ -78,6 +130,7 @@ export class DeviceManager extends EventEmitter {
       console.log(`✅ [DeviceManager] TCP Socket ONLINE at ${ip}:${port}`);
       this.devices.set(ip, device);
       this.reconnectDelays.set(ip, 1000);
+      this.logConnectionEvent(ip, 'DEVICE_CONNECTED', 'SUCCESS', `TCP socket connected to Identix Terminal at ${ip}:${port}`);
 
       let cachedDeviceName = `Identix Terminal (${ip})`;
       let info: any = null;

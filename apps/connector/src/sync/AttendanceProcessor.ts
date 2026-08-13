@@ -128,7 +128,7 @@ export class AttendanceProcessor {
       machine_timestamp: machineTimestampStr, // Exact device string e.g. "2026-08-13 09:20:59"
       machine_timezone: 'Asia/Kolkata',
       event_time_utc: eventTimeUtcIso,       // Canonical UTC ISO
-      event_type: 'IN',                      // Raw punch event mode
+      event_type: 'RAW_PUNCH',               // Single physical machine event mode
       verification_type: (raw.verification_type || 'FINGERPRINT').toUpperCase(),
       raw_payload: rawPayloadObj,
       source: 'BIOMETRIC_MACHINE',
@@ -661,7 +661,6 @@ export class AttendanceProcessor {
         method: 'fingerprint',
         status: summaryPayload.attendance_status === 'CHECKED OUT' ? 'present' : 'working',
         device_name: firstPunch.device_name || `Identix Terminal (${firstPunch.device_ip})`,
-        confidence_score: 99.8,
         location: 'HQ Main Terminal',
         verified: true,
       };

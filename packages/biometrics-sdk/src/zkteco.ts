@@ -1,6 +1,6 @@
 import ZKLib from 'node-zklib';
 import { EventEmitter } from 'events';
-import { AttendanceLog, BiometricUser, ConnectionState, DeviceInfo, IBiometricDevice } from './types';
+import { AttendanceLog, BiometricUser, ConnectionState, DeviceCapabilities, DeviceInfo, IBiometricDevice } from './types';
 
 export class ZKTecoDevice extends EventEmitter implements IBiometricDevice {
   private device: any;
@@ -313,36 +313,61 @@ export class ZKTecoDevice extends EventEmitter implements IBiometricDevice {
     });
   }
 
+  getCapabilities(): DeviceCapabilities {
+    return {
+      live_fingerprint_image: false,
+      fingerprint_template: true,
+      verification_event: true,
+      face_recognition: false,
+      protocol: 'ZKTeco TCP/IP Standalone Protocol (Port 4370)',
+      image_unavailability_reason: 'Fingerprint image not available from device protocol',
+    };
+  }
+
   async getDeviceInfo(): Promise<DeviceInfo> {
     try {
       let sn = "Unknown";
-      let deviceName = "ZKTeco Device";
+      let deviceName = "Identix K90 Pro Terminal";
       let mac = "00:00:00:00:00:00";
       let firmware = "Unknown";
       let platform = "ZMM220";
       let userCount = 0;
       let templateCount = 0;
       let memoryUsage = "0MB / 128MB";
+      let deviceTimeIso: string | undefined = undefined;
+      let clockDriftSec = 0;
 
       try {
         const info = await this.device.getInfo();
         if (info) {
           userCount = info.userCounts || 0;
-          templateCount = info.fingerCounts || info.logCounts || 0; // Using available info
-          deviceName = `ZK Device (${userCount} users)`;
+          templateCount = info.fingerCounts || info.logCounts || 0;
+          deviceName = `Identix Terminal (${userCount} users)`;
 
           if (info.sn) sn = info.sn;
           if (info.mac) mac = info.mac;
           if (info.firmware) firmware = info.firmware;
           if (info.platform) platform = info.platform;
 
-          // Generate a pseudo-memory string based on counts
           const mem = Math.round((userCount * 2 + templateCount * 5) / 1024) + "MB";
           memoryUsage = `${mem} / 128MB`;
         }
       } catch (e) {
         console.warn("Could not fetch detailed info");
       }
+
+      try {
+        if (typeof this.device.getTime === 'function') {
+          const dt = await this.device.getTime();
+          if (dt) {
+            const devDate = new Date(dt);
+            if (!isNaN(devDate.getTime())) {
+              deviceTimeIso = devDate.toISOString();
+              clockDriftSec = Math.abs(Math.round((Date.now() - devDate.getTime()) / 1000));
+            }
+          }
+        }
+      } catch (_) {}
 
       return {
         ip: this.ip,
@@ -356,6 +381,10 @@ export class ZKTecoDevice extends EventEmitter implements IBiometricDevice {
         templateCount,
         memoryUsage,
         connectionState: this.connectionState,
+        deviceTime: deviceTimeIso,
+        serverTime: new Date().toISOString(),
+        clockDriftSeconds: clockDriftSec,
+        capabilities: this.getCapabilities(),
       };
     } catch (error) {
       console.error(`Failed to get device info from ${this.ip}`, error);
@@ -365,7 +394,6 @@ export class ZKTecoDevice extends EventEmitter implements IBiometricDevice {
 
   async clearAdminPrivileges(): Promise<boolean> {
     try {
-      // CMD_CLEAR_ADMIN = 22 or 1013 refresh
       await this.device.executeCmd(22, '');
       await this.device.executeCmd(1013, '');
       return true;
@@ -375,4 +403,5 @@ export class ZKTecoDevice extends EventEmitter implements IBiometricDevice {
     }
   }
 }
+
 

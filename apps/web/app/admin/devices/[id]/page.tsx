@@ -50,11 +50,11 @@ export default function DeviceCenterPage({ params }: { params: { id: string } })
     return (
       <AppShell title="Device Not Found" subtitle="The device you are looking for does not exist.">
         <div className="p-6">
-          <Button asChild>
-            <Link href="/admin/devices">
+          <Link href="/admin/devices">
+            <Button>
               <ArrowLeft className="mr-2 h-4 w-4" /> Back to Devices
-            </Link>
-          </Button>
+            </Button>
+          </Link>
         </div>
       </AppShell>
     );
@@ -64,11 +64,11 @@ export default function DeviceCenterPage({ params }: { params: { id: string } })
     <AppShell
       title={
         <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-white">
-            <Link href="/admin/devices">
+          <Link href="/admin/devices">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-white">
               <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
+            </Button>
+          </Link>
           <span>{device.name}</span>
         </div>
       }

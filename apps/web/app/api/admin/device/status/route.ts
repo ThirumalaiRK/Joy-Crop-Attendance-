@@ -66,27 +66,28 @@ export async function GET() {
     }
   } catch (_) {}
 
-  // 3. Fallback default status
+  // 3. Fallback status when local connector agent cannot be reached
   return NextResponse.json({
-    offline: false,
+    offline: true,
+    message: 'Local Attendance Connector is offline or unreachable.',
     machineName: 'Identix Terminal Controller',
     nodeVersion: 'v24.4.1',
     localIp: '192.168.1.56',
     listeningPort: 4370,
-    uptime: 450,
-    memoryMB: 102,
-    employeeCacheSize: 48,
-    tcpConnectedCount: 1,
+    uptime: 0,
+    memoryMB: 0,
+    employeeCacheSize: 0,
+    tcpConnectedCount: 0,
     totalTrackedDevices: 1,
     inMemoryQueueSize: 0,
-    wsClients: 1,
+    wsClients: 0,
     devices: [
       {
         ip: '192.168.1.56',
         port: 4370,
         name: 'Identix K90 Pro Terminal',
-        status: 'ONLINE',
-        latency_ms: 12,
+        status: 'OFFLINE',
+        latency_ms: 0,
         lastHeartbeat: new Date().toISOString(),
       },
     ],

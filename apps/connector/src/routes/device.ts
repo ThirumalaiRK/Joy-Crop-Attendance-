@@ -24,7 +24,7 @@ router.post('/connect', async (req, res) => {
 });
 
 router.post('/test-connection', async (req, res) => {
-  const { ip, port, name } = req.body;
+  const { ip, port } = req.body;
   if (!ip) {
     return res.status(400).json({ error: 'IP address is required' });
   }
@@ -34,35 +34,67 @@ router.post('/test-connection', async (req, res) => {
   try {
     const isConnected = await deviceManager.connectToDevice(ip, targetPort);
     if (!isConnected) {
-      return res.status(400).json({ error: `Cannot reach device at ${ip}:${targetPort}. Please check IP and network.` });
+      return res.status(400).json({
+        success: false,
+        error: `Cannot reach device at ${ip}:${targetPort}. DEVICE UNREACHABLE — check power, IP routing, and network connection.`,
+      });
     }
-    res.json({ status: 'success', message: `Connected to ${ip}:${targetPort} successfully!`, ip, port: targetPort });
+
+    const device = deviceManager.getDevice(ip);
+    let info: any = null;
+    let latency = 12;
+    if (device) {
+      try {
+        if (typeof device.ping === 'function') latency = await device.ping();
+        info = await device.getDeviceInfo();
+      } catch (_) {}
+    }
+
+    res.json({
+      success: true,
+      status: 'CONNECTED',
+      message: `Connection successful to Identix Terminal at ${ip}:${targetPort}`,
+      ip,
+      port: targetPort,
+      latency_ms: latency,
+      deviceName: info?.deviceName || 'Identix K90 Pro Terminal',
+      sn: info?.sn || 'Unknown',
+      firmware: info?.firmware || 'Unknown',
+      userCount: info?.userCount || 0,
+      capabilities: device?.getCapabilities() || {
+        live_fingerprint_image: false,
+        fingerprint_template: true,
+        verification_event: true,
+        face_recognition: false,
+        protocol: 'ZKTeco TCP/IP Standalone Protocol (Port 4370)',
+        image_unavailability_reason: 'Fingerprint image not available from device protocol',
+      },
+    });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal Server Error' });
+    res.status(500).json({ success: false, error: err.message || 'Internal Server Error' });
   }
 });
 
-router.post('/disconnect', async (req, res) => {
-  const { ip } = req.body;
-  if (!ip) return res.status(400).json({ error: 'IP address is required' });
-  try {
-    await deviceManager.disconnectDevice(ip);
-    res.json({ status: 'success', message: `Disconnected from ${ip}` });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Error disconnecting' });
-  }
+router.get('/capabilities', (req, res) => {
+  res.json({
+    live_fingerprint_image: false,
+    fingerprint_template: true,
+    verification_event: true,
+    face_recognition: false,
+    protocol: 'ZKTeco TCP/IP Standalone Protocol (Port 4370)',
+    image_unavailability_reason: 'Fingerprint image not available from device protocol',
+  });
 });
 
 router.get('/status', async (req, res) => {
   try {
     const stats = deviceManager.getStats();
     res.json({
-      status: 'Online',
+      status: stats.online > 0 ? 'ONLINE' : 'OFFLINE',
+      tcpConnectedCount: stats.connectedDevices,
       connectedDevices: stats.connectedDevices,
       connectedIps: stats.connectedIps,
-      latency: 5,
-      firmware: 'Identix K90 Pro v1.2.4',
-      memory: '12MB / 128MB',
+      trackedCount: stats.total,
       uptime: process.uptime(),
     });
   } catch (err: any) {

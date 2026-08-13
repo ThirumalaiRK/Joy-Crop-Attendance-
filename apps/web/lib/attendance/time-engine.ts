@@ -133,7 +133,7 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
           sessionId: `sess-${finalEmpId}`,
           employeeId: finalEmpId,
           employeeName: finalEmpName,
-          eventType: 'CHECK_IN',
+          eventType: 'RAW_PUNCH',
           eventTime: raw.event_time_utc,
           formattedTime: raw.machine_timestamp ? `${raw.machine_timestamp} IST` : formattedTime,
           device: raw.device_serial_number || `Identix Terminal (${raw.device_ip})`,
