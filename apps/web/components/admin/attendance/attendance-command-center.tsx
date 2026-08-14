@@ -45,7 +45,7 @@ export function AttendanceCommandCenter() {
   // Use IST date - on Vercel (UTC server) toISOString().split('T')[0] returns the UTC date
   const TODAY_STR = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const [selectedDate, setSelectedDate] = useState<string>(TODAY_STR);
-  const [dateScope, setDateScope] = useState<'today' | 'custom_date' | 'month' | 'all'>('today');
+  const [dateScope, setDateScope] = useState<'today' | 'custom_date' | 'month' | 'all'>('all');
 
   // Raw Machine Records stream
   const [records, setRecords] = useState<any[]>([]);

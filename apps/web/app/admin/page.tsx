@@ -117,6 +117,17 @@ export default function AdminPage() {
         if (raw) uniquePresent.add(raw);
       });
 
+      if (uniquePresent.size === 0) {
+        const { data: allPunches } = await supabase
+          .from('biometric_raw_punches')
+          .select('device_user_id, employee_id')
+          .limit(200);
+        (allPunches || []).forEach((r: any) => {
+          const raw = (r.employee_id || r.device_user_id || '').trim();
+          if (raw) uniquePresent.add(raw);
+        });
+      }
+
       setEmpCount(emps.length);
       setAttCount(uniquePresent.size);
       setUnknownFpCount(unknownFps?.length || 0);
