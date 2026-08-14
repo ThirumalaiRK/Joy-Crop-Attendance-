@@ -112,7 +112,59 @@ export async function syncSupabaseEvents(force = false): Promise<void> {
     const newStore: AttendanceEvent[] = [];
     const existingIds = new Set<string>();
 
-    // 1. Fetch raw punches directly from biometric_raw_punches (Immutable Source of Truth)
+    // 1. Direct TCP connector live log pull from hardware terminal
+    const CONNECTOR_URLS = [
+      process.env.NEXT_PUBLIC_CONNECTOR_URL,
+      'https://courageous-unexplosively-beckett.ngrok-free.dev',
+      'http://127.0.0.1:4000',
+      'http://localhost:4000',
+    ].filter(Boolean) as string[];
+
+    for (const baseUrl of CONNECTOR_URLS) {
+      try {
+        const pullUrl = `${baseUrl.replace(/\/+$/, '')}/api/device/attendance/pull`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(pullUrl, {
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.logs && Array.isArray(json.logs)) {
+            json.logs.forEach((log: any, idx: number) => {
+              const rawEmpId = log.deviceUserId || String(log.userSn);
+              const idStr = `tcp-log-${rawEmpId}-${log.recordTime || idx}`;
+              if (!existingIds.has(idStr)) {
+                const resolved = employeeLookupCache.get(rawEmpId);
+                const finalEmpId = resolved?.id || rawEmpId;
+                const finalEmpName = resolved?.name || `Employee ${rawEmpId}`;
+                const rawTs = log.recordTime || log.timestamp;
+                newStore.push({
+                  id: idStr,
+                  sessionId: `sess-${finalEmpId}`,
+                  employeeId: finalEmpId,
+                  employeeName: finalEmpName,
+                  eventType: 'RAW_PUNCH',
+                  eventTime: rawTs,
+                  formattedTime: `${rawTs} IST`,
+                  device: `Identix Terminal (TCP 4370)`,
+                  method: 'Fingerprint',
+                  notes: 'Direct TCP Hardware Machine Punch',
+                  ...(resolved?.dept ? { department: resolved.dept } : {}),
+                } as any);
+                existingIds.add(idStr);
+              }
+            });
+          }
+          break;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fetch raw punches directly from biometric_raw_punches (Immutable Source of Truth)
     const { data: rawPunches } = await supabase
       .from('biometric_raw_punches')
       .select('*')
