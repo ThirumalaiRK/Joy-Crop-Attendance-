@@ -318,13 +318,14 @@ export function calculateNetSummaryForEvents(
   const sorted = [...events].sort((a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime());
   const lastEvent = sorted[sorted.length - 1];
 
-  // First check-in event for today's session
-  const checkInEvt = sorted.find((e) => e.eventType === 'CHECK_IN') ||
-    sorted.find((e) => (e.eventType as string) === 'RAW_PUNCH') ||
-    sorted[0];
-  
-  // checkOutEvt is the latest CHECK_OUT event in this session
-  const checkOutEvt = sorted.slice().reverse().find((e) => e.eventType === 'CHECK_OUT');
+  // First punch of the daily session = Check In
+  const checkInEvt = sorted[0];
+
+  // If multiple punches exist on the same date, last punch = Check Out
+  let checkOutEvt = sorted.slice().reverse().find((e) => e.eventType === 'CHECK_OUT');
+  if (!checkOutEvt && sorted.length > 1) {
+    checkOutEvt = sorted[sorted.length - 1];
+  }
   const isCurrentlyCheckedOut = Boolean(checkOutEvt);
 
   let totalTimeMinutes = 0;
@@ -349,6 +350,8 @@ export function calculateNetSummaryForEvents(
     const dateLabel = checkOutDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: '2-digit' });
     const timeLabel = checkOutDate.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
     checkOutTimeStr = `${dateLabel} • ${timeLabel}`;
+  } else if (!isTodaySession && checkInEvt) {
+    checkOutTimeStr = '— (Auto Closed)';
   }
 
   if (checkInDate && checkOutDate) {
@@ -495,7 +498,7 @@ export function calculateNetSummaryForEvents(
 
   if (!checkInEvt) {
     status = 'ABSENT';
-  } else if (isCurrentlyCheckedOut) {
+  } else if (isCurrentlyCheckedOut || !isTodaySession) {
     status = 'CHECKED_OUT' as any;
   } else if (lastEvent) {
     switch (lastEvent.eventType) {
@@ -713,15 +716,20 @@ export function fetchAllAttendanceSummaries(targetDate?: string): AttendanceSumm
       return;
     }
 
-    if (!employeeMap.has(canonicalId)) {
-      employeeMap.set(canonicalId, {
+    const evtDate = evt.eventTime
+      ? new Date(evt.eventTime).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+      : TODAY_STR;
+    const sessionKey = `${canonicalId}_${evtDate}`;
+
+    if (!employeeMap.has(sessionKey)) {
+      employeeMap.set(sessionKey, {
         empId: canonicalId,
         name: canonicalName,
         dept: canonicalDept,
         events: [],
       });
     }
-    const existing = employeeMap.get(canonicalId)!;
+    const existing = employeeMap.get(sessionKey)!;
     existing.dept = canonicalDept;
     existing.events.push({
       ...evt,
@@ -730,25 +738,35 @@ export function fetchAllAttendanceSummaries(targetDate?: string): AttendanceSumm
     });
   });
 
-  // Ensure all registered employees in cache are included in today's summaries
-  const seenCanonicalIds = new Set<string>();
-  employeeLookupCache.forEach((info) => {
-    if (info.id && !seenCanonicalIds.has(info.id)) {
-      seenCanonicalIds.add(info.id);
-      if (!employeeMap.has(info.id)) {
-        employeeMap.set(info.id, {
-          empId: info.id,
-          name: info.name,
-          dept: info.dept,
-          events: [],
-        });
+  // Include employees for today if viewing today's scope
+  if (!filterDate || filterDate === TODAY_STR) {
+    const seenCanonicalIds = new Set<string>();
+    employeeLookupCache.forEach((info) => {
+      if (info.id && !seenCanonicalIds.has(info.id)) {
+        seenCanonicalIds.add(info.id);
+        const todayKey = `${info.id}_${TODAY_STR}`;
+        if (!employeeMap.has(todayKey)) {
+          employeeMap.set(todayKey, {
+            empId: info.id,
+            name: info.name,
+            dept: info.dept,
+            events: [],
+          });
+        }
       }
-    }
-  });
+    });
+  }
 
   const summaries: AttendanceSummary[] = [];
-  employeeMap.forEach((data, empId) => {
-    summaries.push(calculateNetSummaryForEvents(empId, data.name, data.dept, data.events));
+  employeeMap.forEach((data) => {
+    summaries.push(calculateNetSummaryForEvents(data.empId, data.name, data.dept, data.events));
+  });
+
+  // Sort summaries: latest date first, then by employee name
+  summaries.sort((a, b) => {
+    const dateComp = (b.date || '').localeCompare(a.date || '');
+    if (dateComp !== 0) return dateComp;
+    return (a.employeeName || '').localeCompare(b.employeeName || '');
   });
 
   return summaries;
