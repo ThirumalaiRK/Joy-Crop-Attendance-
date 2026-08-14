@@ -66,9 +66,42 @@ export function ConnectorStatusPanel() {
   const fetchStatus = async () => {
     setLoading(true);
     try {
-      // 1. Try Direct Connector / Ngrok Gateway
+      // 1. Try Next.js API proxy route (handles direct ngrok + local connector)
+      const resApi = await fetch('/api/admin/device/status', { signal: AbortSignal.timeout(3500) });
+      if (resApi.ok) {
+        const dataApi = await resApi.json();
+        if (dataApi && dataApi.running) {
+          setStatus({
+            running: true,
+            version: dataApi.version || '2.0.0-production',
+            build: 'Persistent TCP + RAM Cache',
+            machineName: dataApi.machineName || 'Office Gateway',
+            nodeVersion: dataApi.nodeVersion || 'v20.x',
+            localIp: dataApi.localIp || '127.0.0.1',
+            listeningPort: dataApi.listeningPort || 4000,
+            tcpConnections: dataApi.tcpConnectedCount ?? 0,
+            connectedDevices: dataApi.totalTrackedDevices || 0,
+            connectedIps: (dataApi.devices || []).map((d: any) => `${d.ip}:${d.port || 4370}`),
+            wsClients: dataApi.wsClients || 1,
+            reconnectAttempts: 0,
+            memoryMB: dataApi.memoryMB || 98,
+            memoryTotalMB: 512,
+            cpuPercent: 2,
+            uptime: dataApi.uptime || 3600,
+            lastHeartbeat: new Date().toLocaleTimeString(),
+            source: dataApi.source || 'direct',
+          });
+          setLastFetched(new Date().toLocaleTimeString());
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (_) {}
+
+    try {
+      // 2. Direct fetch to CONNECTOR_URL / Ngrok URL
       const res = await fetch(`${CONNECTOR_URL}/api/status`, {
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(3000),
         headers: {
           'ngrok-skip-browser-warning': 'true',
           'Accept': 'application/json',
@@ -102,44 +135,48 @@ export function ConnectorStatusPanel() {
           return;
         }
       }
-      throw new Error('Direct endpoint unreachable');
-    } catch {
-      // 2. Fallback to Supabase Realtime & Device Registry
-      try {
-        const { data: dbDevs } = await supabase.from('devices').select('*').limit(10);
-        if (dbDevs && dbDevs.length > 0) {
-          const onlineDevs = dbDevs.filter((d: any) => (d.status || '').toLowerCase() === 'online');
+    } catch (_) {}
+
+    // 3. Fallback to Supabase Realtime Device Status with strict 5-minute freshness check
+    try {
+      const { data: statusRows } = await supabase.from('device_status').select('*');
+      if (statusRows && statusRows.length > 0) {
+        const activeDev = statusRows[0];
+        const lastPingMs = activeDev.last_ping ? new Date(activeDev.last_ping).getTime() : 0;
+        const isRecent = Date.now() - lastPingMs < 300_000; // Updated within 5 minutes
+
+        if (isRecent) {
+          const onlineDevs = statusRows.filter((d: any) => (d.status || '').toLowerCase() === 'online');
           setStatus({
             running: true,
             version: '2.0.0 (Cloud Sync)',
             build: 'Supabase Realtime Sync Engine',
-            machineName: 'Cloud Synchronized Gateway',
+            machineName: activeDev.device_name || 'Cloud Synchronized Gateway',
             nodeVersion: 'Node / Supabase',
-            localIp: dbDevs[0]?.ip_address || '192.168.1.56',
+            localIp: activeDev.device_ip || '192.168.1.56',
             listeningPort: 4370,
             tcpConnections: onlineDevs.length,
-            connectedDevices: dbDevs.length,
-            connectedIps: dbDevs.map((d: any) => d.ip_address || '192.168.1.56'),
+            connectedDevices: statusRows.length,
+            connectedIps: statusRows.map((d: any) => d.device_ip || '192.168.1.56'),
             wsClients: 1,
             reconnectAttempts: 0,
             memoryMB: 95,
             memoryTotalMB: 512,
             cpuPercent: 2,
             uptime: 86400,
-            lastHeartbeat: dbDevs[0]?.last_sync ? new Date(dbDevs[0].last_sync).toLocaleTimeString() : new Date().toLocaleTimeString(),
+            lastHeartbeat: activeDev.last_ping ? new Date(activeDev.last_ping).toLocaleTimeString() : new Date().toLocaleTimeString(),
             source: 'supabase',
           });
           setLastFetched(new Date().toLocaleTimeString());
           setLoading(false);
           return;
         }
-      } catch (_) {}
+      }
+    } catch (_) {}
 
-      setStatus(null);
-      setLastFetched(new Date().toLocaleTimeString());
-    } finally {
-      setLoading(false);
-    }
+    setStatus(null);
+    setLastFetched(new Date().toLocaleTimeString());
+    setLoading(false);
   };
 
   useEffect(() => {

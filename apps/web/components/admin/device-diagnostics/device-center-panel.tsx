@@ -659,6 +659,23 @@ export function DeviceCenterPanel() {
         </div>
       </div>
 
+      {connectorOffline && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200 text-xs flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="size-5 text-amber-400 shrink-0" />
+            <div>
+              <p className="font-semibold text-amber-100 text-sm">Local Attendance Connector Gateway is Offline</p>
+              <p className="text-amber-300/80 mt-0.5">
+                The web app is operating in Supabase Cloud Realtime mode. To connect directly to hardware device <code className="font-mono text-white">192.168.1.56:4370</code> over local TCP, double-click <code className="font-mono text-amber-200">START_CONNECTOR_AND_TUNNEL.bat</code> on your office PC.
+              </p>
+            </div>
+          </div>
+          <Button size="sm" onClick={() => { fetchConnectorStatus(); fetchConnectionLogs(); }} className="bg-amber-600 hover:bg-amber-500 text-white font-semibold">
+            <RefreshCw className="size-3.5 mr-1" /> Re-check Status
+          </Button>
+        </div>
+      )}
+
       {/* ══ TCP Node Topology Panel ════════════════════════════════════════════════ */}
       <div className="rounded-2xl border border-slate-800 bg-slate-950/80 shadow-xl overflow-hidden">
         <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/90 px-5 py-3">
