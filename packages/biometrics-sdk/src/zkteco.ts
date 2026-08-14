@@ -1,3 +1,4 @@
+// @ts-ignore
 import ZKLib from 'node-zklib';
 import { EventEmitter } from 'events';
 import { AttendanceLog, BiometricUser, ConnectionState, DeviceCapabilities, DeviceInfo, IBiometricDevice } from './types';

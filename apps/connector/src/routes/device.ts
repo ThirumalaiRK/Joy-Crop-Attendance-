@@ -211,6 +211,60 @@ router.get('/attendance/pull', async (req, res) => {
   }
 });
 
+router.post('/download-logs', async (req, res) => {
+  const { ip } = req.body || {};
+  const targetIp = ip || '192.168.1.56';
+
+  let device = deviceManager.getDevice(targetIp);
+  if (!device) {
+    await deviceManager.connectToDevice(targetIp, 4370);
+    device = deviceManager.getDevice(targetIp);
+  }
+
+  if (!device) {
+    return res.status(400).json({ error: `Cannot connect to device at ${targetIp}. Ensure device is powered on.` });
+  }
+
+  try {
+    const result = await deviceManager.syncDeviceLogsOverNetwork(targetIp);
+    res.json({
+      status: 'success',
+      message: `Fetched ${result.fetched} record(s) from device over TCP. Ingested ${result.ingested} new punch(es).`,
+      fetched: result.fetched,
+      ingested: result.ingested,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error downloading attendance logs' });
+  }
+});
+
+router.post('/sync-logs', async (req, res) => {
+  const { ip } = req.body || {};
+  const targetIp = ip || '192.168.1.56';
+
+  let device = deviceManager.getDevice(targetIp);
+  if (!device) {
+    await deviceManager.connectToDevice(targetIp, 4370);
+    device = deviceManager.getDevice(targetIp);
+  }
+
+  if (!device) {
+    return res.status(400).json({ error: `Cannot connect to device at ${targetIp}.` });
+  }
+
+  try {
+    const result = await deviceManager.syncDeviceLogsOverNetwork(targetIp);
+    res.json({
+      status: 'success',
+      message: `Synced ${result.ingested}/${result.fetched} punch records over TCP network.`,
+      fetched: result.fetched,
+      ingested: result.ingested,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/enroll', async (req, res) => {
   const { ip, port, uid, userId, userName, fingerIndex = 0, privilege = 0 } = req.body;
 
