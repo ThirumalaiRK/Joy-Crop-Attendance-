@@ -5,7 +5,7 @@
     "dev": "pnpm -r dev",
     "dev:web": "pnpm --filter @hrms/web dev",
     "dev:connector": "pnpm --filter @hrms/connector dev",
-    "build": "pnpm --filter @hrms/biometrics-sdk build && pnpm --filter @hrms/web build",
+    "build": "pnpm --filter @hrms/biometrics-sdk run build && pnpm --filter @hrms/web run build",
     "build:all": "pnpm --filter !@hrms/desktop -r build",
     "test": "pnpm -r test",
     "desktop:dev": "electron apps/desktop",

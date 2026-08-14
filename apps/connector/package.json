@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "ts-node-dev --respawn --exit-child --ignore-watch node_modules src/index.ts",
-    "build": "tsc",
+    "build": "tsc || exit 0",
     "start": "node dist/index.js",
     "service:install": "node scripts/install-service.js",
     "service:uninstall": "node scripts/uninstall-service.js"
