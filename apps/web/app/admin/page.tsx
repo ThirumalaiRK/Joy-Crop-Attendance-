@@ -88,39 +88,66 @@ export default function AdminPage() {
   const [systemAlerts, setSystemAlerts] = useState(0);
 
   useEffect(() => {
-    // Load initial counts
+    // Load initial badge counts using Asia/Kolkata IST date
     const load = async () => {
-      const TODAY_STR = new Date().toISOString().split('T')[0];
-      const [emps, { data: recs }] = await Promise.all([
+      const TODAY_STR = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const [emps, { data: recs }, { data: rawPunches }, { data: unknownFps }] = await Promise.all([
         fetchEmployeesFromSupabase(),
         supabase
           .from('attendance_records')
           .select('employee_id, employee_name')
           .or(`date.eq.${TODAY_STR},created_at.gte.${TODAY_STR}T00:00:00.000Z`),
+        supabase
+          .from('biometric_raw_punches')
+          .select('device_user_id, employee_id')
+          .gte('event_time_utc', `${TODAY_STR}T00:00:00.000Z`),
+        supabase
+          .from('attendance_unknown_events')
+          .select('id')
+          .gte('event_time', `${TODAY_STR}T00:00:00.000Z`),
       ]);
 
-      const uniquePresent = new Set((recs || []).map((r: any) => {
+      const uniquePresent = new Set<string>();
+      (recs || []).forEach((r: any) => {
         const raw = (r.employee_id || r.employee_name || '').trim();
-        const num = parseInt(raw.replace(/\D/g, ''), 10);
-        return !isNaN(num) ? `EMP-${num}` : raw;
-      }));
+        if (raw) uniquePresent.add(raw);
+      });
+      (rawPunches || []).forEach((r: any) => {
+        const raw = (r.employee_id || r.device_user_id || '').trim();
+        if (raw) uniquePresent.add(raw);
+      });
 
       setEmpCount(emps.length);
       setAttCount(uniquePresent.size);
+      setUnknownFpCount(unknownFps?.length || 0);
     };
     load();
 
-    // Realtime updates
+    // Realtime updates for live badges
     const ch = supabase.channel('admin-page-counts')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, async () => {
         const emps = await fetchEmployeesFromSupabase();
         setEmpCount(emps.length);
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'biometric_raw_punches' }, async () => {
+        const TODAY_STR = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        const [ { data: recs }, { data: rawPunches } ] = await Promise.all([
+          supabase.from('attendance_records').select('employee_id, employee_name').or(`date.eq.${TODAY_STR},created_at.gte.${TODAY_STR}T00:00:00.000Z`),
+          supabase.from('biometric_raw_punches').select('device_user_id, employee_id').gte('event_time_utc', `${TODAY_STR}T00:00:00.000Z`),
+        ]);
+        const uniquePresent = new Set<string>();
+        (recs || []).forEach((r: any) => { if (r.employee_id || r.employee_name) uniquePresent.add((r.employee_id || r.employee_name).trim()); });
+        (rawPunches || []).forEach((r: any) => { if (r.employee_id || r.device_user_id) uniquePresent.add((r.employee_id || r.device_user_id).trim()); });
+        setAttCount(uniquePresent.size);
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance_records' }, (payload) => {
         setAttCount((p) => (p ?? 0) + 1);
         if ((payload.new as any)?.status === 'late') {
           setSystemAlerts((p) => p + 1);
         }
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance_unknown_events' }, () => {
+        setUnknownFpCount((p) => p + 1);
       })
       .subscribe();
 

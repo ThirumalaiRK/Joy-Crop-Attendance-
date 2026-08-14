@@ -62,14 +62,31 @@ async function persistSyncState(
 }
 
 export const startSyncEngine = () => {
-  // Every 60 seconds — Reconciliation (Real-time TCP Push handles live punches instantly in <5ms)
-  cron.schedule("*/60 * * * * *", async () => {
+  // Every 30 seconds — Automated background hardware log sync & reconciliation
+  cron.schedule("*/30 * * * * *", async () => {
+    try {
+      const activeIPs = deviceManager.getAllConnectedIPs();
+      if (activeIPs.length === 0 && deviceManager.isDeviceOnline('192.168.1.56')) {
+        activeIPs.push('192.168.1.56');
+      }
+
+      for (const ip of activeIPs) {
+        if (deviceManager.isDeviceOnline(ip)) {
+          deviceManager.syncDeviceLogsOverNetwork(ip).catch((err) => {
+            console.warn(`[SyncEngine] Periodic log sync notice for ${ip}:`, err?.message);
+          });
+        }
+      }
+    } catch (_) {}
+
     const deviceRepo = AppDataSource.getRepository(DeviceCache);
     const attendanceRepo = AppDataSource.getRepository(AttendanceCache);
     const userRepo = AppDataSource.getRepository(UserCache);
 
-    const devices = await deviceRepo.find({ where: { online: true } });
-    if (devices.length === 0) return;
+    let devices: any[] = [];
+    try {
+      devices = await deviceRepo.find({ where: { online: true } });
+    } catch (_) {}
 
     for (const dev of devices) {
       try {
