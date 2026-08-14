@@ -25,6 +25,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@hrms/biometrics-sdk": [
+        "../../packages/biometrics-sdk/src/index.ts"
       ]
     }
   },
